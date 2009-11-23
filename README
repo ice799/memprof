@@ -1,0 +1,18 @@
+memprof (c) Joe Damato  @joedamato   http://timetobleed.com
+
+What is memprof?
+================
+
+Memprof hopes to become a memory profiler for Ruby that will work without
+modifying your Ruby binary. You just require the gem and off you go.
+
+
+When will it be done?
+=====================
+
+No idea, but soon I hope.
+
+Why release this then?
+======================
+
+This gem illustrates an ugly hack that I thought might interest other people.
