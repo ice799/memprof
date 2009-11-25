@@ -1,26 +1,36 @@
 #define _GNU_SOURCE
 #include <err.h>
 #include <fcntl.h>
-#include <gelf.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <link.h>
 #include <sysexits.h>
 #include <sys/mman.h>
+#include <err.h>
 
 #include <ruby.h>
 #include <intern.h>
 
-struct tramp_tbl_entry {
-  unsigned char mov[2];
-  long long addr;
-  unsigned char callq[2];
-  unsigned char ret;
-  unsigned char pad[3];
-} __attribute__((__packed__));;
+#if defined(HAVE_ELF)
+#include <gelf.h>
+#include <link.h>
+#elif defined(HAVE_MACH)
+#include <mach-o/dyld.h>
+#include <mach-o/getsect.h>
+#include <mach-o/loader.h>
+#include <mach-o/ldsyms.h>
+#include <dlfcn.h>
+#endif
 
+struct tramp_tbl_entry {
+  unsigned char rbx_save[1];
+  unsigned char mov[2];
+  void *addr;
+  unsigned char callq[2];
+  unsigned char rbx_restore[1];
+  unsigned char ret[1];
+} __attribute__((__packed__));
 
 static void *text_segment = NULL;
 static unsigned long text_segment_len = 0;
@@ -34,10 +44,11 @@ static size_t tramp_size = 0;
 /*
   ELF specific stuff
 */
+#if defined(HAVE_ELF)
 static ElfW(Shdr) symtab_shdr;
 static Elf *elf = NULL;
 static Elf_Data *symtab_data = NULL;
-
+#endif
 
 static void
 error_tramp() {
@@ -53,26 +64,33 @@ newobj_tramp() {
 
 static void
 create_tramp_table() {
-  int i = 0;
+  int i, j = 0;
 
   struct tramp_tbl_entry ent = {
-    .mov = {'\x48', '\xbb'},
-    .addr = (long long)&error_tramp,
-    .callq = { '\xff', '\xd3' },
-    .ret = '\xc3',
-    .pad =  { '\x90', '\x90', '\x90'},
+    .rbx_save      = {'\x53'},                // push rbx
+    .mov           = {'\x48', '\xbb'},        // mov addr into rbx
+    .addr          = error_tramp,             // ^^^
+    .callq         = {'\xff', '\xd3'},        // callq rbx
+    .rbx_restore   = {'\x5b'},                // pop rbx
+    .ret           = {'\xc3'},                // ret
   };
 
-  tramp_table = mmap(NULL, 4096, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_32BIT|MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
-  if (tramp_table != MAP_FAILED) {
-    for (; i < 4096/sizeof(struct tramp_tbl_entry); i ++ ) {
-      memcpy(tramp_table + i, &ent, sizeof(struct tramp_tbl_entry));
+  int pagesize = 4096;
+
+  for (; i < INT_MAX - pagesize; i += pagesize) {
+    tramp_table = mmap((void*)(NULL + i), pagesize, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_ANON|MAP_PRIVATE, -1, 0);
+    if (tramp_table != MAP_FAILED) {
+      for (; j < pagesize/sizeof(struct tramp_tbl_entry); j ++ ) {
+        memcpy(tramp_table + j, &ent, sizeof(struct tramp_tbl_entry));
+      }
+      return;
     }
   }
+  errx(EX_UNAVAILABLE, "Failed to allocate a page for stage 1 trampoline table");
 }
 
 static void
-update_image(int entry, void *trampee_addr) {
+update_callqs(int entry, void *trampee_addr) {
   char *byte = text_segment;
   size_t count = 0;
   int fn_addr = 0;
@@ -92,8 +110,72 @@ update_image(int entry, void *trampee_addr) {
   }
 }
 
+#ifdef HAVE_MACH
+static void
+update_dyld_stubs(int entry, void *trampee_addr) {
+  char *byte = text_segment;
+  size_t count = 0;
+
+  for(; count < text_segment_len; count++) {
+    if (*byte == '\xff') {
+      int off = *(int *)(byte+2);
+      if (trampee_addr == (void*)(*(long long*)(byte + 6 + off))) {
+        *(long long*)(byte + 6 + off) = tramp_table[entry].addr;
+      }
+    }
+    byte++;
+  }
+}
+#endif
+
+#ifdef HAVE_MACH
+static void
+set_text_segment(struct mach_header *header, const char *sectname) {
+#if defined(__x86_64__) && defined(MH_MAGIC_64)
+  text_segment = getsectdatafromheader_64((struct mach_header_64*)header, "__TEXT", sectname, (uint64_t*)&text_segment_len);
+#else
+  text_segment = getsectdatafromheader(header, "__TEXT", sectname, (uint32_t*)&text_segment_len);
+#endif
+  if (!text_segment)
+    errx(EX_UNAVAILABLE, "Failed to locate the %s section", sectname);
+}
+#endif
+
+static void
+update_image(int entry, void *trampee_addr) {
+#if defined(HAVE_ELF)
+  update_callqs(entry, trampee_addr);
+#elif defined(HAVE_MACH)
+  Dl_info info;
+
+  if (!dladdr(trampee_addr, &info))
+    errx(EX_UNAVAILABLE, "Failed to locate the mach header that contains function at %p", trampee_addr);
+
+  struct mach_header *header = (struct mach_header*) info.dli_fbase;
+
+  if (header == (struct mach_header*)&_mh_execute_header) {
+    set_text_segment(header, "__text");
+    update_callqs(entry, trampee_addr);
+  }
+  else {
+    set_text_segment(header, "__symbol_stub1");
+    unsigned long cur_idx, real_idx = 0;
+    unsigned long count = _dyld_image_count();
+    for (cur_idx = 0; cur_idx < count; cur_idx++) {
+      if (_dyld_get_image_header(cur_idx) == header) {
+        real_idx = cur_idx;
+        break;
+      }
+    }
+    text_segment = text_segment + _dyld_get_image_vmaddr_slide(real_idx);
+    update_dyld_stubs(entry, trampee_addr);
+  }
+#endif
+}
+
 static void *
 find_symbol(char *sym) {
+#if defined(HAVE_ELF)
   char *name = NULL;
 
   /*now print the symbols*/
@@ -112,19 +194,25 @@ find_symbol(char *sym) {
     }
   }
   return NULL;
+#elif defined(HAVE_MACH)
+  void *ptr = NULL;
+  _dyld_lookup_and_bind((const char*)sym, &ptr, NULL);
+  return ptr;
+#endif
 }
 
 static void
 insert_tramp(char *trampee, void *tramp) {
   void *trampee_addr = find_symbol(trampee);
   int entry = tramp_size;
-  tramp_table[tramp_size].addr = (long long)tramp;
+  tramp_table[tramp_size].addr = tramp;
   tramp_size++;
   update_image(entry, trampee_addr);
 }
 
 void Init_memprof()
 {
+#if defined(HAVE_ELF)
   int fd;
   ElfW(Shdr) shdr;
   size_t shstrndx;
@@ -172,13 +260,16 @@ void Init_memprof()
     }
   }
 
-
+#endif
   create_tramp_table();
-
+#if defined(HAVE_MACH)
+  insert_tramp("_rb_newobj", newobj_tramp);
+#elif defined(HAVE_ELF)
   insert_tramp("rb_newobj", newobj_tramp);
 #if 0
   (void) elf_end(e);
   (void) close(fd);
 #endif
   return;
+#endif
 }
