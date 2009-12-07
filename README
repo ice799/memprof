@@ -6,7 +6,6 @@ What is memprof?
 Memprof hopes to become a memory profiler for Ruby that will work without
 modifying your Ruby binary. You just require the gem and off you go.
 
-
 When will it be done?
 =====================
 
@@ -16,3 +15,12 @@ Why release this then?
 ======================
 
 This gem illustrates an ugly hack that I thought might interest other people.
+
+Supported systems
+=================
+64bit linux and snow leopard.
+
+CREDITS
+=======
+
+Jake Douglas for the Mach O/snow leopard support
