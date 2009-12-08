@@ -21,7 +21,6 @@
 #include <mach-o/getsect.h>
 #include <mach-o/loader.h>
 #include <mach-o/ldsyms.h>
-#include <dlfcn.h>
 #endif
 
 struct tramp_inline {
@@ -207,48 +206,40 @@ update_image(int entry, void *trampee_addr) {
 #if defined(HAVE_ELF)
   update_callqs(entry, trampee_addr);
 #elif defined(HAVE_MACH)
-  Dl_info info;
+  // Modify any callsites residing inside the text segment of the executable itself
+  set_text_segment((struct mach_header*)&_mh_execute_header, "__text");
+  update_callqs(entry, trampee_addr);
 
-  if (!dladdr(trampee_addr, &info))
-    errx(EX_UNAVAILABLE, "Failed to locate the mach header that contains function at %p", trampee_addr);
+  // Modify all dyld stubs in shared libraries that have been loaded
+  int i, j, k;
+  int header_count = _dyld_image_count();
 
-  struct mach_header *header = (struct mach_header*) info.dli_fbase;
+  // Go through all the mach objects that are loaded into this process
+  for (i=0; i < header_count; i++) {
+    const struct mach_header *current_hdr = _dyld_get_image_header(i);
+    int lc_count = current_hdr->ncmds;
 
-  if (header == (struct mach_header*)&_mh_execute_header) {
-    set_text_segment(header, "__text");
-    update_callqs(entry, trampee_addr);
-  }
-  else {
-    int i, j, k;
-    int header_count = _dyld_image_count();
+    // this as a char* because we need to step it forward by an arbitrary number of bytes
+    const char *lc = ((const char*) current_hdr) + sizeof(struct mach_header_64);
 
-    // Go through all the mach objects that are loaded into this process
-    for (i=0; i < header_count; i++) {
-      const struct mach_header *current_hdr = _dyld_get_image_header(i);
-      int lc_count = current_hdr->ncmds;
+    // Check all the load commands in the object to see if they are segment commands
+    for (j = 0; j < lc_count; j++) {
+      if (((struct load_command*)lc)->cmd == LC_SEGMENT_64) {
+        const struct segment_command_64 *seg = (const struct segment_command_64 *) lc;
+        const struct section_64 * sect = (const struct section_64*)(lc + sizeof(struct segment_command_64));
+        int section_count = (seg->cmdsize - sizeof(struct segment_command_64)) / sizeof(struct section_64);
 
-      // this as a char* because we need to step it forward by an arbitrary number of bytes
-      const char *lc = ((const char*) current_hdr) + sizeof(struct mach_header_64);
-
-      // Check all the load commands in the object to see if they are segment commands
-      for (j = 0; j < lc_count; j++) {
-        if (((struct load_command*)lc)->cmd == LC_SEGMENT_64) {
-          const struct segment_command_64 *seg = (const struct segment_command_64 *) lc;
-          const struct section_64 * sect = (const struct section_64*)(lc + sizeof(struct segment_command_64));
-          int section_count = (seg->cmdsize - sizeof(struct segment_command_64)) / sizeof(struct section_64);
-
-          // Search the segment for a section containing dyld stub functions
-          for (k=0; k < section_count; k++) {
-            if (strncmp(sect->sectname, "__symbol_stub", 13) == 0) {
-              set_text_segment((struct mach_header*)current_hdr, sect->sectname);
-              text_segment += _dyld_get_image_vmaddr_slide(i);
-              update_dyld_stubs(entry, trampee_addr);
-            }
-            sect++;
+        // Search the segment for a section containing dyld stub functions
+        for (k=0; k < section_count; k++) {
+          if (strncmp(sect->sectname, "__symbol_stub", 13) == 0) {
+            set_text_segment((struct mach_header*)current_hdr, sect->sectname);
+            text_segment += _dyld_get_image_vmaddr_slide(i);
+            update_dyld_stubs(entry, trampee_addr);
           }
+          sect++;
         }
-        lc += ((struct load_command*)lc)->cmdsize;
       }
+      lc += ((struct load_command*)lc)->cmdsize;
     }
   }
 #endif
