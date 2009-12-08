@@ -196,11 +196,7 @@ update_dyld_stubs(int entry, void *trampee_addr) {
 #ifdef HAVE_MACH
 static void
 set_text_segment(struct mach_header *header, const char *sectname) {
-#if defined(__x86_64__) && defined(MH_MAGIC_64)
   text_segment = getsectdatafromheader_64((struct mach_header_64*)header, "__TEXT", sectname, (uint64_t*)&text_segment_len);
-#else
-  text_segment = getsectdatafromheader(header, "__TEXT", sectname, (uint32_t*)&text_segment_len);
-#endif
   if (!text_segment)
     errx(EX_UNAVAILABLE, "Failed to locate the %s section", sectname);
 }
@@ -223,17 +219,37 @@ update_image(int entry, void *trampee_addr) {
     update_callqs(entry, trampee_addr);
   }
   else {
-    set_text_segment(header, "__symbol_stub1");
-    unsigned long cur_idx, real_idx = 0;
-    unsigned long count = _dyld_image_count();
-    for (cur_idx = 0; cur_idx < count; cur_idx++) {
-      if (_dyld_get_image_header(cur_idx) == header) {
-        real_idx = cur_idx;
-        break;
+    int i, j, k;
+    int header_count = _dyld_image_count();
+
+    // Go through all the mach objects that are loaded into this process
+    for (i=0; i < header_count; i++) {
+      const struct mach_header *current_hdr = _dyld_get_image_header(i);
+      int lc_count = current_hdr->ncmds;
+
+      // this as a char* because we need to step it forward by an arbitrary number of bytes
+      const char *lc = ((const char*) current_hdr) + sizeof(struct mach_header_64);
+
+      // Check all the load commands in the object to see if they are segment commands
+      for (j = 0; j < lc_count; j++) {
+        if (((struct load_command*)lc)->cmd == LC_SEGMENT_64) {
+          const struct segment_command_64 *seg = (const struct segment_command_64 *) lc;
+          const struct section_64 * sect = (const struct section_64*)(lc + sizeof(struct segment_command_64));
+          int section_count = (seg->cmdsize - sizeof(struct segment_command_64)) / sizeof(struct section_64);
+
+          // Search the segment for a section containing dyld stub functions
+          for (k=0; k < section_count; k++) {
+            if (strncmp(sect->sectname, "__symbol_stub", 13) == 0) {
+              set_text_segment((struct mach_header*)current_hdr, sect->sectname);
+              text_segment += _dyld_get_image_vmaddr_slide(i);
+              update_dyld_stubs(entry, trampee_addr);
+            }
+            sect++;
+          }
+        }
+        lc += ((struct load_command*)lc)->cmdsize;
       }
     }
-    text_segment = text_segment + _dyld_get_image_vmaddr_slide(real_idx);
-    update_dyld_stubs(entry, trampee_addr);
   }
 #endif
 }
