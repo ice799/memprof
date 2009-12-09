@@ -10,18 +10,9 @@
 #include <sys/mman.h>
 #include <err.h>
 
+#include <st.h>
 #include <ruby.h>
 #include <intern.h>
-
-#if defined(HAVE_ELF)
-#include <gelf.h>
-#include <link.h>
-#elif defined(HAVE_MACH)
-#include <mach-o/dyld.h>
-#include <mach-o/getsect.h>
-#include <mach-o/loader.h>
-#include <mach-o/ldsyms.h>
-#endif
 
 #include "bin_api.h"
 
@@ -41,6 +32,17 @@ size_t tramp_size = 0;
 size_t inline_tramp_size = 0;
 struct inline_tramp_tbl_entry *inline_tramp_table = NULL;
 
+/*
+ * bleak_house stuff
+ */
+static int track_objs = 0;
+static st_table *objs = NULL;
+
+struct obj_track {
+  char *source;
+  int line;
+};
+
 static void
 error_tramp() {
   printf("WARNING: NO TRAMPOLINE SET.\n");
@@ -50,13 +52,68 @@ error_tramp() {
 static VALUE
 newobj_tramp() {
   VALUE ret = rb_newobj();
-  printf("source = %s, line = %d, ret = %ld\n", ruby_sourcefile, ruby_sourceline, ret);
+  struct obj_track *tracker = malloc(sizeof(*tracker));
+
+  if (tracker) {
+    tracker->source = strdup(ruby_sourcefile);
+    tracker->line = ruby_sourceline;
+    st_insert(objs, (st_data_t)ret, (st_data_t)tracker);
+  } else {
+    exit(1);
+  }
   return ret;
 }
 
 static void
 freelist_tramp(unsigned long rval) {
-  printf("free: %ld\n", rval);
+  struct obj_track *tracker;
+  st_delete(objs, (st_data_t *) &rval, (st_data_t *)&tracker);
+  free(tracker->source);
+  free(tracker);
+}
+
+static int
+memprof_tabulate(st_data_t key, st_data_t record, st_data_t arg)
+{
+  st_table *table = (st_table *)arg;
+  struct obj_track *tracker = (struct obj_track *)record;
+  char *source_key = NULL;
+  unsigned long count = 0;
+
+  asprintf(&source_key, "%s:%d", tracker->source, tracker->line);
+  st_lookup(table, (st_data_t)source_key, (st_data_t *)&count);
+  st_insert(table, (st_data_t)source_key, ++count);
+
+  free(tracker->source);
+  return ST_DELETE;
+}
+
+static int
+memprof_do_dump(st_data_t key, st_data_t record, st_data_t arg)
+{
+  st_table *table = (st_table *)arg;
+  unsigned long count = (unsigned long)record;
+  char *source = (char *)key;
+  
+  fprintf(stderr, "%s -- %d objects allocated\n", source, count);
+  return ST_DELETE;
+}
+
+static VALUE memprof_start(VALUE self)
+{
+  track_objs = 1;
+}
+
+static VALUE memprof_stop(VALUE self)
+{
+  track_objs = 0;
+}
+
+static VALUE memprof_dump(VALUE self)
+{
+  st_table *tmp_table = st_init_strtable();
+  st_foreach(objs, memprof_tabulate, (st_data_t)tmp_table);
+  st_foreach(tmp_table, memprof_do_dump, 0);
 }
 
 static void
@@ -281,7 +338,13 @@ insert_tramp(char *trampee, void *tramp) {
 
 void Init_memprof()
 {
+  VALUE memprof = rb_define_module("Memprof");
+  rb_define_singleton_method(memprof, "start", memprof_start, 0);
+  rb_define_singleton_method(memprof, "stop", memprof_stop, 0);
+  rb_define_singleton_method(memprof, "dump", memprof_dump, 0);
+
   pagesize = getpagesize();
+  objs = st_init_numtable();
   bin_init();
   create_tramp_table();
 
