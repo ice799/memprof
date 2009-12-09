@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <err.h>
 #include <fcntl.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -23,6 +24,12 @@
 #include <dlfcn.h>
 #endif
 
+struct tramp_inline {
+  unsigned char jmp[1];
+  uint32_t displacement;
+  unsigned char pad[2];
+} __attribute__((__packed__));
+
 struct tramp_tbl_entry {
   unsigned char rbx_save[1];
   unsigned char mov[2];
@@ -32,14 +39,44 @@ struct tramp_tbl_entry {
   unsigned char ret[1];
 } __attribute__((__packed__));
 
+struct inline_tramp_tbl_entry {
+  unsigned char rex[1];
+  unsigned char mov[1];
+  unsigned char src_reg[1];
+  uint32_t mov_displacement;
+
+  struct {
+    unsigned char push_rbx[1];
+    unsigned char push_rbp[1];
+    unsigned char save_rsp[3];
+    unsigned char align_rsp[4];
+    unsigned char mov[2];
+    void *addr;
+    unsigned char callq[2];
+    unsigned char leave[1];
+    unsigned char rbx_restore[1];
+  } __attribute__((__packed__)) frame;
+
+  unsigned char jmp[1];
+  uint32_t jmp_displacement;
+} __attribute__((__packed__));
+
 static void *text_segment = NULL;
 static unsigned long text_segment_len = 0;
 
 /*
-  trampoline specific stuff
-*/
+   trampoline specific stuff
+ */
 static struct tramp_tbl_entry *tramp_table = NULL;
 static size_t tramp_size = 0;
+
+/*
+   inline trampoline specific stuff
+ */
+
+/* overwriting the mov instructions for inline tramps */
+static size_t inline_tramp_size = 0;
+static struct inline_tramp_tbl_entry *inline_tramp_table = NULL;
 
 /*
   ELF specific stuff
@@ -58,8 +95,9 @@ error_tramp() {
 
 static VALUE
 newobj_tramp() {
-  printf("source = %s, line = %d\n", ruby_sourcefile, ruby_sourceline);
-  return rb_newobj();
+  VALUE ret = rb_newobj();
+  printf("source = %s, line = %d, ret = %ld\n", ruby_sourcefile, ruby_sourceline, ret);
+  return ret;
 }
 
 static void
@@ -75,17 +113,44 @@ create_tramp_table() {
     .ret           = {'\xc3'},                // ret
   };
 
+  struct inline_tramp_tbl_entry inline_ent = {
+    .rex     = {'\x48'},
+    .mov     = {'\x89'},
+    .src_reg = {'\x05'},
+    .mov_displacement = 0,
+
+    .frame = {
+      .push_rbx = {'\x53'},
+      .push_rbp = {'\x55'},
+      .save_rsp = {'\x48', '\x89', '\xe5'},
+      .align_rsp = {'\x48', '\x83', '\xe4', '\xf0'},
+      .mov = {'\x48', '\xbb'},
+      .addr = error_tramp,
+      .callq = {'\xff', '\xd3'},
+      .leave = {'\xc9'},
+      .rbx_restore = {'\x5b'},
+    },
+
+    .jmp  = {'\xe9'},
+    .jmp_displacement = 0,
+  };
+
   int pagesize = 4096;
 
-  for (; i < INT_MAX - pagesize; i += pagesize) {
-    tramp_table = mmap((void*)(NULL + i), pagesize, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_ANON|MAP_PRIVATE, -1, 0);
+  for (i = pagesize; i < INT_MAX - pagesize; i += pagesize) {
+    tramp_table = mmap((void*)(NULL + i), 2*pagesize, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_ANON|MAP_PRIVATE|MAP_FIXED, -1, 0);
     if (tramp_table != MAP_FAILED) {
+      inline_tramp_table = (void *)tramp_table + pagesize;
       for (; j < pagesize/sizeof(struct tramp_tbl_entry); j ++ ) {
         memcpy(tramp_table + j, &ent, sizeof(struct tramp_tbl_entry));
+      }
+      for (j = 0; j < pagesize/sizeof(struct inline_tramp_tbl_entry); j++) {
+        memcpy(inline_tramp_table + j, &inline_ent, sizeof(struct inline_tramp_tbl_entry));
       }
       return;
     }
   }
+
   errx(EX_UNAVAILABLE, "Failed to allocate a page for stage 1 trampoline table");
 }
 
@@ -174,7 +239,7 @@ update_image(int entry, void *trampee_addr) {
 }
 
 static void *
-find_symbol(char *sym) {
+find_symbol(char *sym, long *size) {
 #if defined(HAVE_ELF)
   char *name = NULL;
 
@@ -185,11 +250,15 @@ find_symbol(char *sym) {
   for (; esym < lastsym; esym++){
     if ((esym->st_value == 0) ||
         (ELF32_ST_BIND(esym->st_info)== STB_WEAK) ||
-        (ELF32_ST_BIND(esym->st_info)== STB_NUM) ||
-        (ELF32_ST_TYPE(esym->st_info)!= STT_FUNC))
+        (ELF32_ST_BIND(esym->st_info)== STB_NUM)) // ||
+        //(ELF32_ST_TYPE(esym->st_info)!= STT_FUNC))
       continue;
     name = elf_strptr(elf, symtab_shdr.sh_link, (size_t)esym->st_name);
     if (strcmp(name, sym) == 0) {
+        if (size) {
+          *size = esym->st_size;
+          printf("sym: %s, size: %lx\n", sym, *size);
+        }
        return (void *)esym->st_value;
     }
   }
@@ -202,12 +271,138 @@ find_symbol(char *sym) {
 }
 
 static void
+freelist_tramp(unsigned long rval) {
+  printf("free: %ld\n", rval);
+}
+
+static void
+hook_freelist(int entry) {
+  long sizes[] = { 0, 0, 0 };
+  void *sym1 = find_symbol("gc_sweep", &sizes[0]);
+  void *sym2 = find_symbol("finalize_list", &sizes[1]);
+  void *sym3 = find_symbol("rb_gc_force_recycle", &sizes[2]);
+  void *freelist_callers[]= { sym1, sym2, sym3 };
+  int max = 3;
+  size_t i = 0;
+  char *byte = freelist_callers[0];
+  void *freelist = find_symbol("freelist", NULL);
+  uint32_t mov_target =  0;
+  void *aligned_addr = NULL;
+  size_t count = 0;
+
+  /* This is the stage 1 trampoline for hooking the inlined add_freelist
+   * function .
+   *
+   * NOTE: The original instruction mov %reg, freelist is 7 bytes wide,
+   * whereas jmpq $displacement is only 5 bytes wide. We *must* pad out
+   * the next two bytes. This will be important to remember below.
+   */
+  struct tramp_inline tramp = {
+    .jmp           = {'\xe9'},
+    .displacement  = 0,
+    .pad           = {'\x90', '\x90'},
+  };
+
+  struct inline_tramp_tbl_entry *inl_tramp_st2 = NULL;
+
+  for (;i < max;) {
+    /* make sure it is a mov instruction */
+    if (byte[1] == '\x89') {
+
+      /* Read the REX byte to make sure it is a mov that we care about */
+      if ((byte[0] == '\x48') ||
+          (byte[0] == '\x4c')) {
+
+        /* Grab the target of the mov. REMEMBER: in this case the target is 
+         * a 32bit displacment that gets added to RIP (where RIP is the adress of
+         * the next instruction).
+         */
+        mov_target = *(uint32_t *)(byte + 3);
+
+        /* Sanity check. Ensure that the displacement from freelist to the next
+         * instruction matches the mov_target. If so, we know this mov is
+         * updating freelist.
+         */
+        if ((freelist - (void *)(byte+7)) == mov_target) {
+          /* Before the stage 1 trampoline gets written, we need to generate
+           * the code for the stage 2 trampoline. Let's copy over the REX byte
+           * and the byte which mentions the source register into the stage 2
+           * trampoline.
+           */
+          inl_tramp_st2 = inline_tramp_table + entry;
+          inl_tramp_st2->rex[0] = byte[0];
+          inl_tramp_st2->src_reg[0] = byte[2];
+
+          /* Setup the stage 1 trampoline. Calculate the displacement to
+           * the stage 2 trampoline from the next instruction.
+           *
+           * REMEMBER!!!! The next instruction will be NOP after our stage 1
+           * trampoline is written. This is 5 bytes into the structure, even
+           * though the original instruction we overwrote was 7 bytes.
+           */
+          tramp.displacement = (uint32_t)((void *)(inl_tramp_st2) - (void *)(byte+5));
+
+          /* Figure out what page the stage 1 tramp is gonna be written to, mark
+           * it WRITE, write the trampoline in, and then remove WRITE permission.
+           */
+          aligned_addr = (void*)(((long)byte)&~(0xffff));
+          mprotect(aligned_addr, (((void *)byte) - aligned_addr) + 10, PROT_READ|PROT_WRITE|PROT_EXEC);
+          memcpy(byte, &tramp, sizeof(struct tramp_inline));
+          mprotect(aligned_addr, (((void *)byte) - aligned_addr) + 10, PROT_READ|PROT_EXEC);
+
+          /* Finish setting up the stage 2 trampoline. */
+
+          /* calculate the displacement to freelist from the next instruction */
+          inl_tramp_st2->mov_displacement = freelist - (void *)&(inl_tramp_st2->frame);
+
+          /* jmp back to the instruction after stage 1 trampoline was inserted 
+           *
+           * This can be 5 or 7, it doesn't matter. If its 5, we'll hit our 2
+           * NOPS. If its 7, we'll land directly on the next instruction.
+           */
+          inl_tramp_st2->jmp_displacement = (uint32_t)((void *)(byte + 7) -
+                                                       (void *)(inline_tramp_table + entry + 1));
+
+          /* write the address of our C level trampoline in to the structure */
+          inl_tramp_st2->frame.addr = freelist_tramp;
+
+          /* track the new entry and new trampoline size */
+          entry++;
+          inline_tramp_size++;
+        }
+      }
+    }
+
+    if (count >= sizes[i]) {
+        count = 0;
+        i ++;
+        byte = freelist_callers[i];
+    }
+    count++;
+    byte++;
+  }
+}
+
+static void
 insert_tramp(char *trampee, void *tramp) {
-  void *trampee_addr = find_symbol(trampee);
+  void *trampee_addr = find_symbol(trampee, NULL);
   int entry = tramp_size;
-  tramp_table[tramp_size].addr = tramp;
-  tramp_size++;
-  update_image(entry, trampee_addr);
+  int inline_ent = inline_tramp_size;
+
+  if (trampee_addr == NULL) {
+    if (strcmp("add_freelist", trampee) == 0) {
+      /* XXX super hack */
+      inline_tramp_table[inline_tramp_size].frame.addr = tramp;
+      inline_tramp_size++;
+      hook_freelist(inline_ent);
+    } else {
+      return;
+    }
+  } else {
+    tramp_table[tramp_size].addr = tramp;
+    tramp_size++;
+    update_image(entry, trampee_addr);
+  }
 }
 
 void Init_memprof()
@@ -266,6 +461,7 @@ void Init_memprof()
   insert_tramp("_rb_newobj", newobj_tramp);
 #elif defined(HAVE_ELF)
   insert_tramp("rb_newobj", newobj_tramp);
+  insert_tramp("add_freelist", freelist_tramp);
 #if 0
   (void) elf_end(e);
   (void) close(fd);
