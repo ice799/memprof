@@ -45,6 +45,9 @@ struct inline_tramp_tbl_entry {
   uint32_t mov_displacement;
 
   struct {
+    unsigned char push_rdi[1];
+    unsigned char mov_rdi[3];
+    uint32_t rdi_source_displacement;
     unsigned char push_rbx[1];
     unsigned char push_rbp[1];
     unsigned char save_rsp[3];
@@ -54,6 +57,7 @@ struct inline_tramp_tbl_entry {
     unsigned char callq[2];
     unsigned char leave[1];
     unsigned char rbx_restore[1];
+    unsigned char rdi_restore[1];
   } __attribute__((__packed__)) frame;
 
   unsigned char jmp[1];
@@ -119,6 +123,9 @@ create_tramp_table() {
     .mov_displacement = 0,
 
     .frame = {
+      .push_rdi = {'\x57'},
+      .mov_rdi = {'\x48', '\x8b', '\x3d'},
+      .rdi_source_displacement = 0,
       .push_rbx = {'\x53'},
       .push_rbp = {'\x55'},
       .save_rsp = {'\x48', '\x89', '\xe5'},
@@ -128,6 +135,7 @@ create_tramp_table() {
       .callq = {'\xff', '\xd3'},
       .leave = {'\xc9'},
       .rbx_restore = {'\x5b'},
+      .rdi_restore = {'\x5f'},
     },
 
     .jmp  = {'\xe9'},
@@ -359,8 +367,18 @@ hook_freelist(int entry) {
 
           /* Finish setting up the stage 2 trampoline. */
 
-          /* calculate the displacement to freelist from the next instruction */
+          /* calculate the displacement to freelist from the next instruction.
+           *
+           * This is used to replicate the original instruction we overwrote.
+           */
           inl_tramp_st2->mov_displacement = freelist - (void *)&(inl_tramp_st2->frame);
+
+          /* fill in the displacement to freelist from the next instruction.
+           *
+           * This is to arrange for the new value in freelist to be in %rdi, and as such
+           * be the first argument to the C handler. As per the amd64 ABI.
+           */
+          inl_tramp_st2->frame.rdi_source_displacement = freelist - (void *)&(inl_tramp_st2->frame.push_rbx);
 
           /* jmp back to the instruction after stage 1 trampoline was inserted 
            *
