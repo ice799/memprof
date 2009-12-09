@@ -59,8 +59,9 @@ newobj_tramp() {
     tracker->line = ruby_sourceline;
     st_insert(objs, (st_data_t)ret, (st_data_t)tracker);
   } else {
-    exit(1);
+    fprintf(stderr, "Warning, unable to allocate a tracker. You are running dangerously low on RAM!\n");
   }
+
   return ret;
 }
 
@@ -96,6 +97,8 @@ memprof_do_dump(st_data_t key, st_data_t record, st_data_t arg)
   char *source = (char *)key;
   
   fprintf(stderr, "%s -- %d objects allocated\n", source, count);
+
+  free(source);
   return ST_DELETE;
 }
 
