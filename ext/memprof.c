@@ -52,14 +52,18 @@ error_tramp() {
 static VALUE
 newobj_tramp() {
   VALUE ret = rb_newobj();
-  struct obj_track *tracker = malloc(sizeof(*tracker));
+  struct obj_track *tracker = NULL;
 
-  if (tracker) {
-    tracker->source = strdup(ruby_sourcefile);
-    tracker->line = ruby_sourceline;
-    st_insert(objs, (st_data_t)ret, (st_data_t)tracker);
-  } else {
-    fprintf(stderr, "Warning, unable to allocate a tracker. You are running dangerously low on RAM!\n");
+  if (track_objs) {
+    tracker = malloc(sizeof(*tracker));
+
+    if (tracker) {
+      tracker->source = strdup(ruby_sourcefile);
+      tracker->line = ruby_sourceline;
+      st_insert(objs, (st_data_t)ret, (st_data_t)tracker);
+    } else {
+      fprintf(stderr, "Warning, unable to allocate a tracker. You are running dangerously low on RAM!\n");
+    }
   }
 
   return ret;
@@ -68,9 +72,12 @@ newobj_tramp() {
 static void
 freelist_tramp(unsigned long rval) {
   struct obj_track *tracker;
-  st_delete(objs, (st_data_t *) &rval, (st_data_t *)&tracker);
-  free(tracker->source);
-  free(tracker);
+
+  if  (track_objs) {
+    st_delete(objs, (st_data_t *) &rval, (st_data_t *)&tracker);
+    free(tracker->source);
+    free(tracker);
+  }
 }
 
 static int
