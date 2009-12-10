@@ -39,6 +39,7 @@ static int track_objs = 0;
 static st_table *objs = NULL;
 
 struct obj_track {
+  VALUE obj;
   char *source;
   int line;
 };
@@ -60,6 +61,7 @@ newobj_tramp() {
     if (tracker) {
       tracker->source = strdup(ruby_sourcefile);
       tracker->line = ruby_sourceline;
+      tracker->obj = ret;
       st_insert(objs, (st_data_t)ret, (st_data_t)tracker);
     } else {
       fprintf(stderr, "Warning, unable to allocate a tracker. You are running dangerously low on RAM!\n");
@@ -88,7 +90,7 @@ memprof_tabulate(st_data_t key, st_data_t record, st_data_t arg)
   char *source_key = NULL;
   unsigned long count = 0;
 
-  asprintf(&source_key, "%s:%d", tracker->source, tracker->line);
+  asprintf(&source_key, "%s:%d (%s)", tracker->source, tracker->line, rb_obj_classname(tracker->obj));
   st_lookup(table, (st_data_t)source_key, (st_data_t *)&count);
   st_insert(table, (st_data_t)source_key, ++count);
 
@@ -103,7 +105,7 @@ memprof_do_dump(st_data_t key, st_data_t record, st_data_t arg)
   unsigned long count = (unsigned long)record;
   char *source = (char *)key;
   
-  fprintf(stderr, "%s -- %d objects allocated\n", source, count);
+  fprintf(stderr, "%s %d objects allocated\n", source, count);
 
   free(source);
   return ST_DELETE;
