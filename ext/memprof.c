@@ -13,6 +13,7 @@
 #include <st.h>
 #include <ruby.h>
 #include <intern.h>
+#include <node.h>
 
 #include "bin_api.h"
 
@@ -59,8 +60,8 @@ newobj_tramp() {
     tracker = malloc(sizeof(*tracker));
 
     if (tracker) {
-      tracker->source = strdup(ruby_sourcefile);
-      tracker->line = ruby_sourceline;
+      tracker->source = strdup(ruby_current_node->nd_file);
+      tracker->line = nd_line(ruby_current_node);
       tracker->obj = ret;
       st_insert(objs, (st_data_t)ret, (st_data_t)tracker);
     } else {
@@ -77,8 +78,10 @@ freelist_tramp(unsigned long rval) {
 
   if  (track_objs) {
     st_delete(objs, (st_data_t *) &rval, (st_data_t *)&tracker);
-    free(tracker->source);
-    free(tracker);
+    if (tracker) {
+      free(tracker->source);
+      free(tracker);
+    }
   }
 }
 
@@ -212,9 +215,15 @@ static void
 hook_freelist(int entry) {
   long sizes[] = { 0, 0, 0 };
   void *sym1 = bin_find_symbol("gc_sweep", &sizes[0]);
+
+  if (sym1 == NULL) {
+    /* this is MRI ... */
+    sym1 = bin_find_symbol("garbage_collect", &sizes[0]);
+  }
+
   void *sym2 = bin_find_symbol("finalize_list", &sizes[1]);
   void *sym3 = bin_find_symbol("rb_gc_force_recycle", &sizes[2]);
-  void *freelist_callers[]= { sym1, sym2, sym3 };
+  void *freelist_callers[] = { sym1, sym2, sym3 };
   int max = 3;
   size_t i = 0;
   char *byte = freelist_callers[0];
