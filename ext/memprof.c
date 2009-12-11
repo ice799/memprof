@@ -200,6 +200,9 @@ memprof_stats(int argc, VALUE *argv, VALUE self)
   VALUE str;
   FILE *out = NULL;
 
+  if (!track_objs)
+    rb_raise(rb_eRuntimeError, "object tracking disabled, call Memprof.start first");
+
   rb_scan_args(argc, argv, "01", &str);
 
   if (RTEST(str)) {
