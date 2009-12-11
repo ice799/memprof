@@ -15,10 +15,6 @@
 #include <intern.h>
 #include <node.h>
 
-#ifndef RSTRING_PTR
-#define RSTRING_PTR(obj) RSTRING(obj)->ptr
-#endif
-
 #include "bin_api.h"
 
 size_t pagesize;
@@ -199,8 +195,7 @@ memprof_dump(int argc, VALUE *argv, VALUE self)
   rb_scan_args(argc, argv, "01", &str);
 
   if (RTEST(str)) {
-    Check_Type(str, T_STRING);
-    out = fopen(RSTRING_PTR(str), "w+");
+    out = fopen(StringValueCStr(str), "w");
     if (!out)
       rb_raise(rb_eArgError, "unable to open output file");
   }
