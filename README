@@ -21,19 +21,18 @@ Memprof.start
 
 # ruby code
 
-Memprof.dump
+Memprof.stats
 
 # more ruby code
 
-Memprof.dump
-
+Memprof.stats
 Memprof.stop
 
 
-The above code will output a 2 dumps allowing you to compare which objects were
+The above code will output 2 summaries, allowing you to compare which objects were
 destroyed and which are still around.
 
-Memprof.dump also takes an (optional) file name to write the output to a file.
+Memprof.stats also takes an (optional) file name to write the output to a file.
 
 Supported systems
 =================
