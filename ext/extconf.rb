@@ -19,7 +19,7 @@ def sys(cmd)
   ret
 end
 
-yajl = File.basename('yajl-1.0.7.tar.gz')
+yajl = File.basename('yajl-1.0.8.tar.gz')
 dir = File.basename(yajl, '.tar.gz')
 
 unless File.exists?("#{CWD}/dst/lib/libyajl_s.a")
@@ -37,8 +37,8 @@ unless File.exists?("#{CWD}/dst/lib/libyajl_s.a")
   end
 end
 
-$LIBPATH << "#{CWD}/dst/lib"
-$INCFLAGS << "-I#{CWD}/dst/include"
+$LIBPATH.unshift "#{CWD}/dst/lib"
+$INCFLAGS[0,0] = "-I#{CWD}/dst/include "
 
 unless have_library('yajl_s') and have_header('yajl/yajl_gen.h')
   raise 'Yajl build failed'
