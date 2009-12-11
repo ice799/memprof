@@ -2,25 +2,50 @@ memprof (c) Joe Damato  @joedamato   http://timetobleed.com
 
 What is memprof?
 ================
+Memprof is a memory profiler for Ruby that requires no patches to the Ruby VM.
+It can help you find Ruby level memory leaks in your application.
 
-Memprof hopes to become a memory profiler for Ruby that will work without
-modifying your Ruby binary. You just require the gem and off you go.
+How to use
+==========
 
-When will it be done?
-=====================
+require 'memprof'
+Memprof.start
 
-No idea, but soon I hope.
+# ruby code
 
-Why release this then?
-======================
+Memprof.stop
+Memprof.dump
 
-This gem illustrates an ugly hack that I thought might interest other people.
+That will monitor allocations and frees that happen between "start" and "stop"
+and will output information to standard error.
+
+Memprof.dump also takes an (optional) file name to write the output to a file.
 
 Supported systems
 =================
-64bit linux and snow leopard.
+Currently supporting:
+
+  Linux:
+    x86_64 builds of Ruby Enterprise Edition 1.8.6/1.8.7
+    x86_64 builds of MRI Ruby if built with --disable-shared
+
+Experimental support:
+
+  Snow Leopard:
+    x86_64 builds of MRI (both enable-shared and disable-shared)
+
+Coming soon:
+
+  Official support for Snow Leopard.
+
+  Linux:
+    Tracking object allocationns in C extensions.
+    x86_64 builds of MRI Ruby with --enable-shared
+
+  i386/i686 support for all the above.
 
 CREDITS
 =======
+Jake Douglas for the Mach O/snow leopard support.
 
-Jake Douglas for the Mach O/snow leopard support
+Aman Gupta for various bug fixes and other cleanup.
