@@ -97,10 +97,15 @@ bin_init()
         text_segment_len = shdr.sh_size;
     } else if (shdr.sh_type == SHT_SYMTAB) {
         symtab_shdr = shdr;
-        if ((symtab_data = elf_getdata(scn,symtab_data)) == 0 || symtab_data->d_size == 0) {
-          return;
+        if ((symtab_data = elf_getdata(scn,symtab_data)) == NULL || symtab_data->d_size == 0) {
+          errx(EX_DATAERR, "ruby has a broken symbol table. Is it stripped? "
+                          "memprof only works on binaries that are not stripped!\n", filename);
         }
     }
+  }
+
+  if (!symtab_data) {
+    errx(EX_DATAERR, "binary is stripped. memprof only works on binaries that are not stripped!", filename);
   }
 }
 #endif
