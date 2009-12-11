@@ -12,9 +12,9 @@
 #include <mach-o/ldsyms.h>
 
 static void
-set_text_segment(struct mach_header *header, const char *sectname)
+set_text_segment(const struct mach_header *header, const char *sectname)
 {
-  text_segment = getsectdatafromheader_64((struct mach_header_64*)header, "__TEXT", sectname, (uint64_t*)&text_segment_len);
+  text_segment = getsectdatafromheader_64((const struct mach_header_64*)header, "__TEXT", sectname, (uint64_t*)&text_segment_len);
   if (!text_segment)
     errx(EX_UNAVAILABLE, "Failed to locate the %s section", sectname);
 }
@@ -28,8 +28,8 @@ update_dyld_stubs(int entry, void *trampee_addr)
   for(; count < text_segment_len; count++) {
     if (*byte == '\xff') {
       int off = *(int *)(byte+2);
-      if (trampee_addr == (void*)(*(long long*)(byte + 6 + off))) {
-        *(long long*)(byte + 6 + off) = tramp_table[entry].addr;
+      if (trampee_addr == *((void**)(byte + 6 + off))) {
+        *((void**)(byte + 6 + off)) = tramp_table[entry].addr;
       }
     }
     byte++;

@@ -129,7 +129,7 @@ objs_tabulate(st_data_t key, st_data_t record, st_data_t arg)
       type = "__node__"; break;
     default:
       if (RBASIC(tracker->obj)->klass) {
-        type = rb_obj_classname(tracker->obj);
+        type = (char*) rb_obj_classname(tracker->obj);
       } else {
         type = "__unknown__";
       }
