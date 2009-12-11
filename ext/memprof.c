@@ -238,6 +238,19 @@ memprof_dump_bang(int argc, VALUE *argv, VALUE self)
   return Qnil;
 }
 
+static VALUE
+memprof_track(int argc, VALUE *argv, VALUE self)
+{
+  if (!rb_block_given_p())
+    rb_raise(rb_eArgError, "block required");
+
+  memprof_start(self);
+  rb_yield(Qnil);
+  memprof_dump(argc, argv, self);
+  memprof_stop(self);
+  return Qnil;
+}
+
 static void
 create_tramp_table()
 {
@@ -476,6 +489,7 @@ Init_memprof()
   rb_define_singleton_method(memprof, "stop", memprof_stop, 0);
   rb_define_singleton_method(memprof, "dump", memprof_dump, -1);
   rb_define_singleton_method(memprof, "dump!", memprof_dump_bang, -1);
+  rb_define_singleton_method(memprof, "track", memprof_track, -1);
 
   pagesize = getpagesize();
   objs = st_init_numtable();
