@@ -21,11 +21,17 @@ Memprof.start
 
 # ruby code
 
-Memprof.stop
 Memprof.dump
 
-That will monitor allocations and frees that happen between "start" and "stop"
-and will output information to standard error.
+# more ruby code
+
+Memprof.dump
+
+Memprof.stop
+
+
+The above code will output a 2 dumps allowing you to compare which objects were
+destroyed and which are still around.
 
 Memprof.dump also takes an (optional) file name to write the output to a file.
 
