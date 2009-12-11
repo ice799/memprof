@@ -5,6 +5,14 @@ What is memprof?
 Memprof is a memory profiler for Ruby that requires no patches to the Ruby VM.
 It can help you find Ruby level memory leaks in your application.
 
+Required to install
+===================
+If you are using the Linux version, you need to install libelf:
+
+apt-get install libelfg0-dev
+
+The experimental OSX version needs no additional libraries.
+
 How to use
 ==========
 
