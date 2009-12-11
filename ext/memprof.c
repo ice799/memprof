@@ -127,7 +127,7 @@ memprof_tabulate(st_data_t key, st_data_t record, st_data_t arg)
       }
   }
 
-  asprintf(&source_key, "%s:%d (%s)", tracker->source, tracker->line, type);
+  asprintf(&source_key, "%s:%d:%s", tracker->source, tracker->line, type);
   st_lookup(table, (st_data_t)source_key, (st_data_t *)&count);
   if (st_insert(table, (st_data_t)source_key, ++count)) {
     free(source_key);
@@ -137,14 +137,19 @@ memprof_tabulate(st_data_t key, st_data_t record, st_data_t arg)
   return ST_DELETE;
 }
 
+static struct results {
+  char **entries;
+  unsigned long num_entries;
+};
+
 static int
 memprof_do_dump(st_data_t key, st_data_t record, st_data_t arg)
 {
-  st_table *table = (st_table *)arg;
+  struct results *res = (struct results *)arg;
   unsigned long count = (unsigned long)record;
   char *source = (char *)key;
   
-  fprintf(stderr, "%s %d objects allocated\n", source, count);
+  asprintf(&(res->entries[res->num_entries++]), "%7d %s", count, source);
 
   free(source);
   return ST_DELETE;
@@ -173,9 +178,29 @@ memprof_stop(VALUE self)
 static VALUE
 memprof_dump(VALUE self)
 {
-  st_table *tmp_table = st_init_strtable();
+  st_table *tmp_table;
+  struct results res;
+  int i;
+
+  track_objs = 0;
+
+  tmp_table = st_init_strtable();
   st_foreach(objs, memprof_tabulate, (st_data_t)tmp_table);
-  st_foreach(tmp_table, memprof_do_dump, 0);
+
+  res.num_entries = 0;
+  res.entries = malloc(sizeof(char*) * tmp_table->num_entries);
+
+  st_foreach(tmp_table, memprof_do_dump, (st_data_t)&res);
+  st_free_table(tmp_table);
+
+  qsort(res.entries, res.num_entries, sizeof(char*), &strcmp);
+  for (i=0; i < res.num_entries; i++) {
+    printf("%s\n", res.entries[i]);
+    free(res.entries[i]);
+  }
+  free(res.entries);
+
+  track_objs = 1;
   return Qnil;
 }
 
