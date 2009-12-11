@@ -31,6 +31,8 @@ Memprof.dump also takes an (optional) file name to write the output to a file.
 
 Supported systems
 =================
+This only works on unstripped binaries.
+
 Currently supporting:
 
   Linux:
