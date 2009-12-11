@@ -46,13 +46,15 @@ struct obj_track {
 };
 
 static void
-error_tramp() {
+error_tramp()
+{
   printf("WARNING: NO TRAMPOLINE SET.\n");
   return;
 }
 
 static VALUE
-newobj_tramp() {
+newobj_tramp()
+{
   VALUE ret = rb_newobj();
   struct obj_track *tracker = NULL;
 
@@ -82,11 +84,12 @@ newobj_tramp() {
 }
 
 static void
-freelist_tramp(unsigned long rval) {
+freelist_tramp(unsigned long rval)
+{
   struct obj_track *tracker = NULL;
 
-  if  (track_objs) {
-    st_delete(objs, (st_data_t *) &rval, (st_data_t *)&tracker);
+  if (track_objs) {
+    st_delete(objs, (st_data_t *) &rval, (st_data_t *) &tracker);
     if (tracker) {
       free(tracker->source);
       free(tracker);
@@ -147,17 +150,20 @@ memprof_do_dump(st_data_t key, st_data_t record, st_data_t arg)
   return ST_DELETE;
 }
 
-static VALUE memprof_start(VALUE self)
+static VALUE
+memprof_start(VALUE self)
 {
   track_objs = 1;
 }
 
-static VALUE memprof_stop(VALUE self)
+static VALUE
+memprof_stop(VALUE self)
 {
   track_objs = 0;
 }
 
-static VALUE memprof_dump(VALUE self)
+static VALUE
+memprof_dump(VALUE self)
 {
   st_table *tmp_table = st_init_strtable();
   st_foreach(objs, memprof_tabulate, (st_data_t)tmp_table);
@@ -165,7 +171,8 @@ static VALUE memprof_dump(VALUE self)
 }
 
 static void
-create_tramp_table() {
+create_tramp_table()
+{
   int i, j = 0;
 
   struct tramp_tbl_entry ent = {
@@ -223,7 +230,8 @@ create_tramp_table() {
 }
 
 void
-update_callqs(int entry, void *trampee_addr) {
+update_callqs(int entry, void *trampee_addr)
+{
   char *byte = text_segment;
   size_t count = 0;
   int fn_addr = 0;
@@ -245,7 +253,8 @@ update_callqs(int entry, void *trampee_addr) {
 
 
 static void
-hook_freelist(int entry) {
+hook_freelist(int entry)
+{
   long sizes[] = { 0, 0, 0 };
   void *sym1 = bin_find_symbol("gc_sweep", &sizes[0]);
 
@@ -369,7 +378,8 @@ hook_freelist(int entry) {
 }
 
 static void
-insert_tramp(char *trampee, void *tramp) {
+insert_tramp(char *trampee, void *tramp)
+{
   void *trampee_addr = bin_find_symbol(trampee, NULL);
   int entry = tramp_size;
   int inline_ent = inline_tramp_size;
@@ -390,7 +400,8 @@ insert_tramp(char *trampee, void *tramp) {
   }
 }
 
-void Init_memprof()
+void
+Init_memprof()
 {
   VALUE memprof = rb_define_module("Memprof");
   rb_define_singleton_method(memprof, "start", memprof_start, 0);
