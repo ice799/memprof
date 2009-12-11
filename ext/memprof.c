@@ -102,6 +102,7 @@ objs_free(st_data_t key, st_data_t record, st_data_t arg)
 {
   struct obj_track *tracker = (struct obj_track *)record;
   free(tracker->source);
+  free(tracker);
   return ST_DELETE;
 }
 
