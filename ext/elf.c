@@ -43,10 +43,10 @@ bin_find_symbol(char *sym, size_t *size)
       continue;
     name = elf_strptr(elf, symtab_shdr.sh_link, (size_t)esym->st_name);
     if (strcmp(name, sym) == 0) {
-        if (size) {
-          *size = esym->st_size;
-        }
-       return (void *)esym->st_value;
+      if (size) {
+        *size = esym->st_size;
+      }
+      return (void *)esym->st_value;
     }
   }
   return NULL;

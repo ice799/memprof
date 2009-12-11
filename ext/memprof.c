@@ -60,8 +60,17 @@ newobj_tramp() {
     tracker = malloc(sizeof(*tracker));
 
     if (tracker) {
-      tracker->source = strdup(ruby_current_node->nd_file);
-      tracker->line = nd_line(ruby_current_node);
+      if (ruby_current_node && ruby_current_node->nd_file && *ruby_current_node->nd_file) {
+        tracker->source = strdup(ruby_current_node->nd_file);
+        tracker->line = nd_line(ruby_current_node);
+      } else if (ruby_sourcefile) {
+        tracker->source = strdup(ruby_sourcefile);
+        tracker->line = ruby_sourceline;
+      } else {
+        tracker->source = strdup("__null__");
+        tracker->line = 0;
+      }
+
       tracker->obj = ret;
       st_insert(objs, (st_data_t)ret, (st_data_t)tracker);
     } else {
@@ -92,8 +101,30 @@ memprof_tabulate(st_data_t key, st_data_t record, st_data_t arg)
   struct obj_track *tracker = (struct obj_track *)record;
   char *source_key = NULL;
   unsigned long count = 0;
+  char *type = NULL;
 
-  asprintf(&source_key, "%s:%d (%s)", tracker->source, tracker->line, rb_obj_classname(tracker->obj));
+  switch (TYPE(tracker->obj)) {
+    case T_NONE:
+      type = "__none__"; break;
+    case T_BLKTAG:
+      type = "__blktag__"; break;
+    case T_UNDEF:
+      type = "__undef__"; break;
+    case T_VARMAP:
+      type = "__varmap__"; break;
+    case T_SCOPE:
+      type = "__scope__"; break;
+    case T_NODE:
+      type = "__node__"; break;
+    default:
+      if (RBASIC(tracker->obj)->klass) {
+        type = rb_obj_classname(tracker->obj);
+      } else {
+        type = "__unknown__";
+      }
+  }
+
+  asprintf(&source_key, "%s:%d (%s)", tracker->source, tracker->line, type);
   st_lookup(table, (st_data_t)source_key, (st_data_t *)&count);
   st_insert(table, (st_data_t)source_key, ++count);
 
