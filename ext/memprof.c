@@ -98,7 +98,15 @@ freelist_tramp(unsigned long rval)
 }
 
 static int
-memprof_tabulate(st_data_t key, st_data_t record, st_data_t arg)
+objs_free(st_data_t key, st_data_t record, st_data_t arg)
+{
+  struct obj_track *tracker = (struct obj_track *)record;
+  free(tracker->source);
+  return ST_DELETE;
+}
+
+static int
+objs_tabulate(st_data_t key, st_data_t record, st_data_t arg)
 {
   st_table *table = (st_table *)arg;
   struct obj_track *tracker = (struct obj_track *)record;
@@ -133,8 +141,7 @@ memprof_tabulate(st_data_t key, st_data_t record, st_data_t arg)
     free(source_key);
   }
 
-  free(tracker->source);
-  return ST_DELETE;
+  return ST_CONTINUE;
 }
 
 struct results {
@@ -172,6 +179,7 @@ memprof_stop(VALUE self)
     return Qfalse;
 
   track_objs = 0;
+  st_foreach(objs, objs_free, (st_data_t)0);
   return Qtrue;
 }
 
@@ -203,7 +211,7 @@ memprof_dump(int argc, VALUE *argv, VALUE self)
   track_objs = 0;
 
   tmp_table = st_init_strtable();
-  st_foreach(objs, memprof_tabulate, (st_data_t)tmp_table);
+  st_foreach(objs, objs_tabulate, (st_data_t)tmp_table);
 
   res.num_entries = 0;
   res.entries = malloc(sizeof(char*) * tmp_table->num_entries);
@@ -219,6 +227,14 @@ memprof_dump(int argc, VALUE *argv, VALUE self)
   free(res.entries);
 
   track_objs = 1;
+  return Qnil;
+}
+
+static VALUE
+memprof_dump_bang(int argc, VALUE *argv, VALUE self)
+{
+  memprof_dump(argc, argv, self);
+  st_foreach(objs, objs_free, (st_data_t)0);
   return Qnil;
 }
 
@@ -459,6 +475,7 @@ Init_memprof()
   rb_define_singleton_method(memprof, "start", memprof_start, 0);
   rb_define_singleton_method(memprof, "stop", memprof_stop, 0);
   rb_define_singleton_method(memprof, "dump", memprof_dump, -1);
+  rb_define_singleton_method(memprof, "dump!", memprof_dump_bang, -1);
 
   pagesize = getpagesize();
   objs = st_init_numtable();
