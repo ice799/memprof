@@ -153,13 +153,21 @@ memprof_do_dump(st_data_t key, st_data_t record, st_data_t arg)
 static VALUE
 memprof_start(VALUE self)
 {
+  if (track_objs == 1)
+    return Qfalse;
+
   track_objs = 1;
+  return Qtrue;
 }
 
 static VALUE
 memprof_stop(VALUE self)
 {
+  if (track_objs == 0)
+    return Qfalse;
+
   track_objs = 0;
+  return Qtrue;
 }
 
 static VALUE
@@ -168,6 +176,7 @@ memprof_dump(VALUE self)
   st_table *tmp_table = st_init_strtable();
   st_foreach(objs, memprof_tabulate, (st_data_t)tmp_table);
   st_foreach(tmp_table, memprof_do_dump, 0);
+  return Qnil;
 }
 
 static void
