@@ -43,6 +43,7 @@ Experimental support:
 
   Snow Leopard:
     x86_64 builds of MRI (both enable-shared and disable-shared)
+    OSX system Ruby, distributed with Snow Leopard
 
 Coming soon:
 

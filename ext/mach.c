@@ -55,17 +55,18 @@ bin_allocate_page()
 void
 bin_update_image(int entry, void *trampee_addr)
 {
-  // Modify any callsites residing inside the text segment of the executable itself
-  set_text_segment((struct mach_header*)&_mh_execute_header, "__text");
-  update_callqs(entry, trampee_addr);
-
-  // Modify all dyld stubs in shared libraries that have been loaded
   int i, j, k;
   int header_count = _dyld_image_count();
 
   // Go through all the mach objects that are loaded into this process
   for (i=0; i < header_count; i++) {
     const struct mach_header *current_hdr = _dyld_get_image_header(i);
+
+    // Modify any callsites residing inside the text segment
+    set_text_segment(current_hdr, "__text");
+    text_segment += _dyld_get_image_vmaddr_slide(i);
+    update_callqs(entry, trampee_addr);
+
     int lc_count = current_hdr->ncmds;
 
     // this as a char* because we need to step it forward by an arbitrary number of bytes
