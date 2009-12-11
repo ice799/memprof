@@ -83,7 +83,7 @@ newobj_tramp() {
 
 static void
 freelist_tramp(unsigned long rval) {
-  struct obj_track *tracker;
+  struct obj_track *tracker = NULL;
 
   if  (track_objs) {
     st_delete(objs, (st_data_t *) &rval, (st_data_t *)&tracker);
