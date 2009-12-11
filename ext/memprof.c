@@ -15,6 +15,10 @@
 #include <intern.h>
 #include <node.h>
 
+#ifndef RSTRING_PTR
+#define RSTRING_PTR(obj) RSTRING(obj)->ptr
+#endif
+
 #include "bin_api.h"
 
 size_t pagesize;
@@ -184,11 +188,22 @@ memprof_strcmp(const void *obj1, const void *obj2)
 }
 
 static VALUE
-memprof_dump(VALUE self)
+memprof_dump(int argc, VALUE *argv, VALUE self)
 {
   st_table *tmp_table;
   struct results res;
   int i;
+  VALUE str;
+  FILE *out = NULL;
+
+  rb_scan_args(argc, argv, "01", &str);
+
+  if (RTEST(str)) {
+    Check_Type(str, T_STRING);
+    out = fopen(RSTRING_PTR(str), "w+");
+    if (!out)
+      rb_raise(rb_eArgError, "unable to open output file");
+  }
 
   track_objs = 0;
 
@@ -203,7 +218,7 @@ memprof_dump(VALUE self)
 
   qsort(res.entries, res.num_entries, sizeof(char*), &memprof_strcmp);
   for (i=0; i < res.num_entries; i++) {
-    printf("%s\n", res.entries[i]);
+    fprintf(out ? out : stderr, "%s\n", res.entries[i]);
     free(res.entries[i]);
   }
   free(res.entries);
@@ -448,7 +463,7 @@ Init_memprof()
   VALUE memprof = rb_define_module("Memprof");
   rb_define_singleton_method(memprof, "start", memprof_start, 0);
   rb_define_singleton_method(memprof, "stop", memprof_stop, 0);
-  rb_define_singleton_method(memprof, "dump", memprof_dump, 0);
+  rb_define_singleton_method(memprof, "dump", memprof_dump, -1);
 
   pagesize = getpagesize();
   objs = st_init_numtable();
