@@ -137,7 +137,7 @@ memprof_tabulate(st_data_t key, st_data_t record, st_data_t arg)
   return ST_DELETE;
 }
 
-static struct results {
+struct results {
   char **entries;
   unsigned long num_entries;
 };
@@ -175,6 +175,14 @@ memprof_stop(VALUE self)
   return Qtrue;
 }
 
+static int
+memprof_strcmp(const void *obj1, const void *obj2)
+{
+  char *str1 = *(char **)obj1;
+  char *str2 = *(char **)obj2;
+  return strcmp(str2, str1);
+}
+
 static VALUE
 memprof_dump(VALUE self)
 {
@@ -193,7 +201,7 @@ memprof_dump(VALUE self)
   st_foreach(tmp_table, memprof_do_dump, (st_data_t)&res);
   st_free_table(tmp_table);
 
-  qsort(res.entries, res.num_entries, sizeof(char*), &strcmp);
+  qsort(res.entries, res.num_entries, sizeof(char*), &memprof_strcmp);
   for (i=0; i < res.num_entries; i++) {
     printf("%s\n", res.entries[i]);
     free(res.entries[i]);
