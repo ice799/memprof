@@ -126,7 +126,9 @@ memprof_tabulate(st_data_t key, st_data_t record, st_data_t arg)
 
   asprintf(&source_key, "%s:%d (%s)", tracker->source, tracker->line, type);
   st_lookup(table, (st_data_t)source_key, (st_data_t *)&count);
-  st_insert(table, (st_data_t)source_key, ++count);
+  if (st_insert(table, (st_data_t)source_key, ++count)) {
+    free(source_key);
+  }
 
   free(tracker->source);
   return ST_DELETE;
