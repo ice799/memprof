@@ -192,7 +192,7 @@ memprof_strcmp(const void *obj1, const void *obj2)
 }
 
 static VALUE
-memprof_dump(int argc, VALUE *argv, VALUE self)
+memprof_stats(int argc, VALUE *argv, VALUE self)
 {
   st_table *tmp_table;
   struct results res;
@@ -231,9 +231,9 @@ memprof_dump(int argc, VALUE *argv, VALUE self)
 }
 
 static VALUE
-memprof_dump_bang(int argc, VALUE *argv, VALUE self)
+memprof_stats_bang(int argc, VALUE *argv, VALUE self)
 {
-  memprof_dump(argc, argv, self);
+  memprof_stats(argc, argv, self);
   st_foreach(objs, objs_free, (st_data_t)0);
   return Qnil;
 }
@@ -246,7 +246,7 @@ memprof_track(int argc, VALUE *argv, VALUE self)
 
   memprof_start(self);
   rb_yield(Qnil);
-  memprof_dump(argc, argv, self);
+  memprof_stats(argc, argv, self);
   memprof_stop(self);
   return Qnil;
 }
@@ -487,8 +487,8 @@ Init_memprof()
   VALUE memprof = rb_define_module("Memprof");
   rb_define_singleton_method(memprof, "start", memprof_start, 0);
   rb_define_singleton_method(memprof, "stop", memprof_stop, 0);
-  rb_define_singleton_method(memprof, "dump", memprof_dump, -1);
-  rb_define_singleton_method(memprof, "dump!", memprof_dump_bang, -1);
+  rb_define_singleton_method(memprof, "stats", memprof_stats, -1);
+  rb_define_singleton_method(memprof, "stats!", memprof_stats_bang, -1);
   rb_define_singleton_method(memprof, "track", memprof_track, -1);
 
   pagesize = getpagesize();
