@@ -508,5 +508,8 @@ Init_memprof()
   insert_tramp("add_freelist", freelist_tramp);
 #endif
 
+  if (getenv("MEMPROF"))
+    track_objs = 1;
+
   return;
 }
