@@ -3,6 +3,7 @@
 #include "bin_api.h"
 
 #include <limits.h>
+#include <string.h>
 #include <sysexits.h>
 #include <sys/mman.h>
 
@@ -43,11 +44,13 @@ bin_allocate_page()
   size_t i = 0;
 
   for (i = pagesize; i < INT_MAX - pagesize; i += pagesize) {
-    ret = mmap((void*)(NULL + i), 2*pagesize, PROT_WRITE|PROT_READ|PROT_EXEC,
+    ret = mmap((void*)(NULL + i), pagesize, PROT_WRITE|PROT_READ|PROT_EXEC,
                MAP_ANON|MAP_PRIVATE, -1, 0);
 
-    if (tramp_table != MAP_FAILED)
+    if (tramp_table != MAP_FAILED) {
+      memset(tramp_table, 0x90, pagesize);
       return ret;
+    }
   }
   return NULL;
 }

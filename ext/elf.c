@@ -2,10 +2,11 @@
 
 #include "bin_api.h"
 
-#include <stdio.h>
 #include <fcntl.h>
 #include <gelf.h>
 #include <link.h>
+#include <stdio.h>
+#include <string.h>
 #include <sysexits.h>
 #include <unistd.h>
 
@@ -18,7 +19,14 @@ static Elf_Data *symtab_data = NULL;
 void *
 bin_allocate_page()
 {
-  return mmap(NULL, pagesize, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_ANON|MAP_PRIVATE|MAP_32BIT, -1, 0);
+  void * ret = NULL;
+  ret = mmap(NULL, pagesize, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_ANON|MAP_PRIVATE|MAP_32BIT, -1, 0);
+
+  if (ret != MAP_FAILED) {
+    memset(ret, 0x90, pagesize);
+  }
+
+  return ret;
 }
 
 void
