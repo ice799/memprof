@@ -151,7 +151,7 @@ struct results {
 };
 
 static int
-memprof_do_dump(st_data_t key, st_data_t record, st_data_t arg)
+objs_to_array(st_data_t key, st_data_t record, st_data_t arg)
 {
   struct results *res = (struct results *)arg;
   unsigned long count = (unsigned long)record;
@@ -220,10 +220,11 @@ memprof_stats(int argc, VALUE *argv, VALUE self)
   res.num_entries = 0;
   res.entries = malloc(sizeof(char*) * tmp_table->num_entries);
 
-  st_foreach(tmp_table, memprof_do_dump, (st_data_t)&res);
+  st_foreach(tmp_table, objs_to_array, (st_data_t)&res);
   st_free_table(tmp_table);
 
   qsort(res.entries, res.num_entries, sizeof(char*), &memprof_strcmp);
+
   for (i=0; i < res.num_entries; i++) {
     fprintf(out ? out : stderr, "%s\n", res.entries[i]);
     free(res.entries[i]);
