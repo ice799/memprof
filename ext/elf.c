@@ -32,15 +32,17 @@ bin_find_symbol(char *sym, size_t *size)
 {
   char *name = NULL;
 
-  /*now print the symbols*/
   ElfW(Sym) *esym = (ElfW(Sym)*) symtab_data->d_buf;
   ElfW(Sym) *lastsym = (ElfW(Sym)*) ((char*) symtab_data->d_buf + symtab_data->d_size);
-  /* now loop through the symbol table and print it*/
+
   for (; esym < lastsym; esym++){
+    /* ignore weak/numeric/empty symbols */
     if ((esym->st_value == 0) ||
         (ELF32_ST_BIND(esym->st_info)== STB_WEAK) ||
         (ELF32_ST_BIND(esym->st_info)== STB_NUM))
       continue;
+
+
     name = elf_strptr(elf, symtab_shdr.sh_link, (size_t)esym->st_name);
     if (strcmp(name, sym) == 0) {
       if (size) {
