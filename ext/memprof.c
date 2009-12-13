@@ -256,6 +256,433 @@ memprof_track(int argc, VALUE *argv, VALUE self)
   return Qnil;
 }
 
+#include <yajl/yajl_gen.h>
+#include <stdarg.h>
+#include "env.h"
+#include "re.h"
+
+yajl_gen_status
+yajl_gen_cstr(yajl_gen gen, const unsigned char * str)
+{
+  if (!str || str[0] == 0)
+    return yajl_gen_null(gen);
+  else
+    return yajl_gen_string(gen, str, strlen(str));
+}
+
+yajl_gen_status
+yajl_gen_format(yajl_gen gen, char *format, ...)
+{
+  va_list args;
+  char *str;
+  yajl_gen_status ret;
+
+  va_start(args, format);
+  vasprintf(&str, format, args);
+  va_end(args);
+
+  ret = yajl_gen_string(gen, str, strlen(str));
+  free(str);
+  return ret;
+}
+
+yajl_gen_status
+yajl_gen_value(yajl_gen gen, VALUE obj)
+{
+  if (FIXNUM_P(obj))
+    return yajl_gen_integer(gen, FIX2INT(obj));
+  else if (NIL_P(obj) || obj == Qundef)
+    return yajl_gen_null(gen);
+  else if (obj == Qtrue)
+    return yajl_gen_bool(gen, 1);
+  else if (obj == Qfalse)
+    return yajl_gen_bool(gen, 0);
+  else if (SYMBOL_P(obj))
+    return yajl_gen_format(gen, ":%s", rb_id2name(SYM2ID(obj)));
+  else
+    return yajl_gen_format(gen, "0x%x", obj);
+}
+
+static int
+each_hash_entry(st_data_t key, st_data_t record, st_data_t arg)
+{
+  yajl_gen gen = (yajl_gen)arg;
+  VALUE k = (VALUE)key;
+  VALUE v = (VALUE)record;
+
+  yajl_gen_value(gen, k);
+  yajl_gen_value(gen, v);
+
+  return ST_CONTINUE;
+}
+
+static int
+each_ivar(st_data_t key, st_data_t record, st_data_t arg)
+{
+  yajl_gen gen = (yajl_gen)arg;
+  ID id = (ID)key;
+  VALUE val = (VALUE)record;
+
+  yajl_gen_cstr(gen, rb_id2name(id));
+  yajl_gen_value(gen, val);
+
+  return ST_CONTINUE;
+}
+
+char *
+nd_type_str(VALUE obj)
+{
+  switch(nd_type(obj)) {
+    #define ND(type) case NODE_##type: return #type;
+    ND(METHOD);     ND(FBODY);      ND(CFUNC);    ND(SCOPE);
+    ND(BLOCK);      ND(IF);         ND(CASE);     ND(WHEN);
+    ND(OPT_N);      ND(WHILE);      ND(UNTIL);    ND(ITER);
+    ND(FOR);        ND(BREAK);      ND(NEXT);     ND(REDO);
+    ND(RETRY);      ND(BEGIN);      ND(RESCUE);   ND(RESBODY);
+    ND(ENSURE);     ND(AND);        ND(OR);       ND(NOT);
+    ND(MASGN);      ND(LASGN);      ND(DASGN);    ND(DASGN_CURR);
+    ND(GASGN);      ND(IASGN);      ND(CDECL);    ND(CVASGN);
+    ND(CVDECL);     ND(OP_ASGN1);   ND(OP_ASGN2); ND(OP_ASGN_AND);
+    ND(OP_ASGN_OR); ND(CALL);       ND(FCALL);    ND(VCALL);
+    ND(SUPER);      ND(ZSUPER);     ND(ARRAY);    ND(ZARRAY);
+    ND(HASH);       ND(RETURN);     ND(YIELD);    ND(LVAR);
+    ND(DVAR);       ND(GVAR);       ND(IVAR);     ND(CONST);
+    ND(CVAR);       ND(NTH_REF);    ND(BACK_REF); ND(MATCH);
+    ND(MATCH2);     ND(MATCH3);     ND(LIT);      ND(STR);
+    ND(DSTR);       ND(XSTR);       ND(DXSTR);    ND(EVSTR);
+    ND(DREGX);      ND(DREGX_ONCE); ND(ARGS);     ND(ARGSCAT);
+    ND(ARGSPUSH);   ND(SPLAT);      ND(TO_ARY);   ND(SVALUE);
+    ND(BLOCK_ARG);  ND(BLOCK_PASS); ND(DEFN);     ND(DEFS);
+    ND(ALIAS);      ND(VALIAS);     ND(UNDEF);    ND(CLASS);
+    ND(MODULE);     ND(SCLASS);     ND(COLON2);   ND(COLON3)
+    ND(CREF);       ND(DOT2);       ND(DOT3);     ND(FLIP2);
+    ND(FLIP3);      ND(ATTRSET);    ND(SELF);     ND(NIL);
+    ND(TRUE);       ND(FALSE);      ND(DEFINED);  ND(NEWLINE);
+    ND(POSTEXE);    ND(ALLOCA);     ND(DMETHOD);  ND(BMETHOD);
+    ND(MEMO);       ND(IFUNC);      ND(DSYM);     ND(ATTRASGN);
+    ND(LAST);
+    default:
+      return "unknown";
+  }
+}
+
+static VALUE (*rb_classname)(VALUE);
+
+/* TODO
+ *  look for FL_EXIVAR flag and print ivars
+ *  print more detail about Proc/struct BLOCK in T_DATA if freefunc == blk_free
+ *  add Memprof.dump_all for full heap dump
+ *  print details on different types of nodes (nd_next, nd_lit, nd_nth, etc)
+ */
+
+void
+obj_dump(VALUE obj, yajl_gen gen)
+{
+  int type;
+  yajl_gen_map_open(gen);
+
+  yajl_gen_cstr(gen, "address");
+  yajl_gen_value(gen, obj);
+
+  struct obj_track *tracker = NULL;
+  if (st_lookup(objs, (st_data_t)obj, (st_data_t *)&tracker)) {
+    yajl_gen_cstr(gen, "source");
+    yajl_gen_format(gen, "%s:%d", tracker->source, tracker->line);
+  }
+
+  yajl_gen_cstr(gen, "type");
+  switch (type=BUILTIN_TYPE(obj)) {
+    case T_DATA:
+      yajl_gen_cstr(gen, "data");
+
+      if (RBASIC(obj)->klass) {
+        yajl_gen_cstr(gen, "class");
+        yajl_gen_value(gen, RBASIC(obj)->klass);
+
+        yajl_gen_cstr(gen, "class_name");
+        VALUE name = rb_classname(RBASIC(obj)->klass);
+        if (RTEST(name))
+          yajl_gen_cstr(gen, RSTRING(name)->ptr);
+        else
+          yajl_gen_cstr(gen, 0);
+      }
+      break;
+
+    case T_FILE:
+      yajl_gen_cstr(gen, "file");
+      break;
+
+    case T_FLOAT:
+      yajl_gen_cstr(gen, "float");
+
+      yajl_gen_cstr(gen, "data");
+      yajl_gen_double(gen, RFLOAT(obj)->value);
+      break;
+
+    case T_BIGNUM:
+      yajl_gen_cstr(gen, "bignum");
+
+      yajl_gen_cstr(gen, "negative");
+      yajl_gen_bool(gen, RBIGNUM(obj)->sign == 0);
+
+      yajl_gen_cstr(gen, "length");
+      yajl_gen_integer(gen, RBIGNUM(obj)->len);
+
+      yajl_gen_cstr(gen, "data");
+      yajl_gen_string(gen, RBIGNUM(obj)->digits, RBIGNUM(obj)->len);
+      break;
+
+    case T_MATCH:
+      yajl_gen_cstr(gen, "match");
+
+      yajl_gen_cstr(gen, "data");
+      yajl_gen_value(gen, RMATCH(obj)->str);
+      break;
+
+    case T_REGEXP:
+      yajl_gen_cstr(gen, "regexp");
+
+      yajl_gen_cstr(gen, "length");
+      yajl_gen_integer(gen, RREGEXP(obj)->len);
+
+      yajl_gen_cstr(gen, "data");
+      yajl_gen_cstr(gen, RREGEXP(obj)->str);
+      break;
+
+    case T_SCOPE:
+      yajl_gen_cstr(gen, "scope");
+
+      struct SCOPE *scope = (struct SCOPE *)obj;
+      if (scope->local_tbl) {
+        int i = 1;
+        int n = scope->local_tbl[0];
+        VALUE *list = &scope->local_vars[-1];
+        VALUE cur = *list++;
+
+        yajl_gen_cstr(gen, "node");
+        yajl_gen_value(gen, cur);
+
+        if (n) {
+          yajl_gen_cstr(gen, "variables");
+          yajl_gen_map_open(gen);
+          while (n--) {
+            cur = *list++;
+            yajl_gen_cstr(gen, scope->local_tbl[i] == 95 ? "_" : rb_id2name(scope->local_tbl[i]));
+            yajl_gen_value(gen, cur);
+            i++;
+          }
+          yajl_gen_map_close(gen);
+        }
+      }
+      break;
+
+    case T_NODE:
+      yajl_gen_cstr(gen, "node");
+
+      yajl_gen_cstr(gen, "node_type");
+      yajl_gen_cstr(gen, nd_type_str(obj));
+
+      yajl_gen_cstr(gen, "file");
+      yajl_gen_cstr(gen, RNODE(obj)->nd_file);
+
+      yajl_gen_cstr(gen, "line");
+      yajl_gen_integer(gen, nd_line(obj));
+
+      yajl_gen_cstr(gen, "node_code");
+      yajl_gen_integer(gen, nd_type(obj));
+
+      switch (nd_type(obj)) {
+        case NODE_SCOPE:
+          break;
+      }
+      break;
+
+    case T_STRING:
+      yajl_gen_cstr(gen, "string");
+
+      yajl_gen_cstr(gen, "length");
+      yajl_gen_integer(gen, RSTRING(obj)->len);
+
+      if (FL_TEST(obj, ELTS_SHARED|FL_USER3)) {
+        yajl_gen_cstr(gen, "shared");
+        yajl_gen_value(gen, RSTRING(obj)->aux.shared);
+
+        yajl_gen_cstr(gen, "flags");
+        yajl_gen_array_open(gen);
+        if (FL_TEST(obj, ELTS_SHARED))
+          yajl_gen_cstr(gen, "elts_shared");
+        if (FL_TEST(obj, FL_USER3))
+          yajl_gen_cstr(gen, "str_assoc");
+        yajl_gen_array_close(gen);
+      } else {
+        yajl_gen_cstr(gen, "data");
+        yajl_gen_string(gen, RSTRING(obj)->ptr, RSTRING(obj)->len);
+      }
+      break;
+
+    case T_VARMAP:
+      yajl_gen_cstr(gen, "varmap");
+
+      struct RVarmap *vars = (struct RVarmap *)obj;
+
+      if (vars->next) {
+        yajl_gen_cstr(gen, "next");
+        yajl_gen_value(gen, (VALUE)vars->next);
+      }
+
+      if (vars->id) {
+        yajl_gen_cstr(gen, "data");
+        yajl_gen_map_open(gen);
+        yajl_gen_cstr(gen, rb_id2name(vars->id));
+        yajl_gen_value(gen, vars->val);
+        yajl_gen_map_close(gen);
+      }
+      break;
+
+    case T_CLASS:
+    case T_MODULE:
+    case T_ICLASS:
+      yajl_gen_cstr(gen, type==T_CLASS ? "class" : type==T_MODULE ? "module" : "iclass");
+
+      yajl_gen_cstr(gen, "name");
+      VALUE name = rb_classname(obj);
+      if (RTEST(name))
+        yajl_gen_cstr(gen, RSTRING(name)->ptr);
+      else
+        yajl_gen_cstr(gen, 0);
+
+      yajl_gen_cstr(gen, "super");
+      yajl_gen_value(gen, RCLASS(obj)->super);
+
+      yajl_gen_cstr(gen, "super_name");
+      VALUE super_name = rb_classname(RCLASS(obj)->super);
+      if (RTEST(super_name))
+        yajl_gen_cstr(gen, RSTRING(super_name)->ptr);
+      else
+        yajl_gen_cstr(gen, 0);
+
+      if (FL_TEST(obj, FL_SINGLETON)) {
+        yajl_gen_cstr(gen, "singleton");
+        yajl_gen_bool(gen, 1);
+      }
+
+      if (RCLASS(obj)->iv_tbl && RCLASS(obj)->iv_tbl->num_entries) {
+        yajl_gen_cstr(gen, "ivars");
+        yajl_gen_map_open(gen);
+        st_foreach(RCLASS(obj)->iv_tbl, each_ivar, (st_data_t)gen);
+        yajl_gen_map_close(gen);
+      }
+
+      if (type != T_ICLASS && RCLASS(obj)->m_tbl && RCLASS(obj)->m_tbl->num_entries) {
+        yajl_gen_cstr(gen, "methods");
+        yajl_gen_map_open(gen);
+        st_foreach(RCLASS(obj)->m_tbl, each_ivar, (st_data_t)gen);
+        yajl_gen_map_close(gen);
+      }
+      break;
+
+    case T_OBJECT:
+      yajl_gen_cstr(gen, "object");
+
+      yajl_gen_cstr(gen, "class");
+      yajl_gen_value(gen, RBASIC(obj)->klass);
+
+      yajl_gen_cstr(gen, "class_name");
+      yajl_gen_cstr(gen, rb_obj_classname(obj));
+
+      struct RClass *klass = RCLASS(obj);
+
+      if (klass->iv_tbl && klass->iv_tbl->num_entries) {
+        yajl_gen_cstr(gen, "ivars");
+        yajl_gen_map_open(gen);
+        st_foreach(klass->iv_tbl, each_ivar, (st_data_t)gen);
+        yajl_gen_map_close(gen);
+      }
+      break;
+
+    case T_ARRAY:
+      yajl_gen_cstr(gen, "array");
+
+      struct RArray *ary = RARRAY(obj);
+
+      yajl_gen_cstr(gen, "length");
+      yajl_gen_integer(gen, ary->len);
+
+      if (FL_TEST(obj, ELTS_SHARED)) {
+        yajl_gen_cstr(gen, "shared");
+        yajl_gen_value(gen, ary->aux.shared);
+      } else if (ary->len) {
+        yajl_gen_cstr(gen, "data");
+        yajl_gen_array_open(gen);
+        int i;
+        for(i=0; i < ary->len; i++)
+          yajl_gen_value(gen, ary->ptr[i]);
+        yajl_gen_array_close(gen);
+      }
+      break;
+
+    case T_HASH:
+      yajl_gen_cstr(gen, "hash");
+
+      struct RHash *hash = RHASH(obj);
+
+      yajl_gen_cstr(gen, "length");
+      if (hash->tbl)
+        yajl_gen_integer(gen, hash->tbl->num_entries);
+      else
+        yajl_gen_integer(gen, 0);
+
+      yajl_gen_cstr(gen, "default");
+      yajl_gen_value(gen, hash->ifnone);
+
+      if (hash->tbl && hash->tbl->num_entries) {
+        yajl_gen_cstr(gen, "data");
+        yajl_gen_map_open(gen);
+        st_foreach(hash->tbl, each_hash_entry, (st_data_t)gen);
+        yajl_gen_map_close(gen);
+      }
+      break;
+
+    default:
+      yajl_gen_cstr(gen, "unknown");
+  }
+
+  yajl_gen_cstr(gen, "code");
+  yajl_gen_integer(gen, BUILTIN_TYPE(obj));
+
+  yajl_gen_map_close(gen);
+}
+
+static int
+objs_each_dump(st_data_t key, st_data_t record, st_data_t arg)
+{
+  obj_dump((VALUE)key, (yajl_gen)arg);
+  return ST_CONTINUE;
+}
+
+yajl_print_t
+json_print(void *ctx, const char * str, unsigned int len)
+{
+  fwrite(str, sizeof(char), len, stdout);
+}
+
+static VALUE
+memprof_dump(int argc, VALUE *argv, VALUE self)
+{
+  yajl_gen_config conf = { .beautify = 1, .indentString = "  " };
+  yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, NULL);
+
+  track_objs = 0;
+
+  yajl_gen_array_open(gen);
+  st_foreach(objs, objs_each_dump, (st_data_t)gen);
+  yajl_gen_array_close(gen);
+
+  track_objs = 1;
+
+  return Qnil;
+}
+
 static void
 create_tramp_table()
 {
@@ -495,6 +922,7 @@ Init_memprof()
   rb_define_singleton_method(memprof, "stats", memprof_stats, -1);
   rb_define_singleton_method(memprof, "stats!", memprof_stats_bang, -1);
   rb_define_singleton_method(memprof, "track", memprof_track, -1);
+  rb_define_singleton_method(memprof, "dump", memprof_dump, -1);
 
   pagesize = getpagesize();
   objs = st_init_numtable();
@@ -507,6 +935,8 @@ Init_memprof()
   insert_tramp("rb_newobj", newobj_tramp);
   insert_tramp("add_freelist", freelist_tramp);
 #endif
+
+  rb_classname = bin_find_symbol("classname", 0);
 
   if (getenv("MEMPROF"))
     track_objs = 1;
