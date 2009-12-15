@@ -2,8 +2,10 @@
 
 #include "bin_api.h"
 
+#include <dwarf.h>
 #include <fcntl.h>
 #include <gelf.h>
+#include <libdwarf.h>
 #include <link.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,6 +17,8 @@
 static ElfW(Shdr) symtab_shdr;
 static Elf *elf = NULL;
 static Elf_Data *symtab_data = NULL;
+
+static Dwarf_Debug dwrf = NULL;
 
 void *
 bin_allocate_page()
@@ -62,6 +66,15 @@ bin_find_symbol(char *sym, size_t *size)
   return NULL;
 }
 
+int
+bin_type_size(char *type)
+{
+}
+
+int
+bin_type_member_offset(char *type, char *member)
+{
+}
 
 void
 bin_init()
@@ -71,6 +84,7 @@ bin_init()
   size_t shstrndx;
   char *filename;
   Elf_Scn *scn;
+  Dwarf_Error dwrf_err;
 
   if (elf_version(EV_CURRENT) == EV_NONE)
     errx(EX_SOFTWARE, "ELF library initialization failed: %s",
@@ -116,6 +130,10 @@ bin_init()
 
   if (!symtab_data) {
     errx(EX_DATAERR, "binary is stripped. memprof only works on binaries that are not stripped!", filename);
+  }
+
+  if (dwarf_elf_init(elf, DW_DLC_READ, NULL, NULL, &dwrf, &dwrf_err) != DW_DLV_OK) {
+    errx(EX_DATAERR, "unable to read debugging data from binary. was it compiled with -g? is it unstripped?", filename);
   }
 }
 #endif

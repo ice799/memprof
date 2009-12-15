@@ -104,6 +104,18 @@ bin_find_symbol(char *sym,  size_t *size) {
   return ptr;
 }
 
+int
+bin_type_size(char *type)
+{
+  return -1;
+}
+
+int
+bin_type_member_offset(char *type, char *member)
+{
+  return -1;
+}
+
 void
 bin_init()
 {

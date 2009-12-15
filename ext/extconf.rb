@@ -23,10 +23,10 @@ def add_define(name)
   $defs.push("-D#{name}")
 end
 
-###
-# libelf
-
 if RUBY_PLATFORM =~ /linux/
+  ###
+  # libelf
+
   libelf = File.basename('libelf-0.8.13.tar.gz')
   dir = File.basename(libelf, '.tar.gz')
 
@@ -57,8 +57,39 @@ if RUBY_PLATFORM =~ /linux/
     raise 'libelf build failed'
   end
 
+  ###
+  # libdwarf
+
+  libdwarf = File.basename('libdwarf-20091118.tar.gz')
+  dir = File.basename(libdwarf, '.tar.gz').sub('lib','')
+
+  unless File.exists?("#{CWD}/src/#{dir}/libdwarf/libdwarf_ext.a")
+    puts "(I'm about to compile libdwarf.. this will definitely take a while)"
+
+    Dir.chdir('src') do
+      FileUtils.rm_rf(dir) if File.exists?(dir)
+
+      sys("tar zxvf #{libdwarf}")
+      Dir.chdir("#{dir}/libdwarf") do
+        ENV['CFLAGS'] = "-fPIC -I#{CWD}/dst/include"
+        ENV['LDFLAGS'] = "-L#{CWD}/dst/lib"
+        sys("./configure")
+        sys("make")
+
+        FileUtils.cp 'libdwarf.a', "#{CWD}/dst/lib/libdwarf_ext.a"
+        FileUtils.cp 'dwarf.h', "#{CWD}/dst/include/"
+        FileUtils.cp 'libdwarf.h', "#{CWD}/dst/include/"
+      end
+    end
+  end
+
+  unless have_library('dwarf_ext')
+    raise 'libdwarf build failed'
+  end
+
   is_elf = true
   add_define 'HAVE_ELF'
+  add_define 'HAVE_DWARF'
 end
 
 if have_header('mach-o/dyld')
