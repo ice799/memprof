@@ -30,7 +30,7 @@ if RUBY_PLATFORM =~ /linux/
   libelf = File.basename('libelf-0.8.13.tar.gz')
   dir = File.basename(libelf, '.tar.gz')
 
-  unless File.exists?("#{CWD}/dst/lib/libelf_ext.so")
+  unless File.exists?("#{CWD}/dst/lib/libelf_ext.a")
     puts "(I'm about to compile libelf.. this will definitely take a while)"
 
     Dir.chdir('src') do
@@ -38,21 +38,22 @@ if RUBY_PLATFORM =~ /linux/
 
       sys("tar zxvf #{libelf}")
       Dir.chdir(dir) do
-        sys("./configure --prefix=#{CWD}/dst")
+        ENV['CFLAGS'] = '-fPIC'
+        sys("./configure --prefix=#{CWD}/dst --disable-nls --disable-shared")
         sys("make")
         sys("make install")
       end
     end
 
     Dir.chdir('dst/lib') do
-      FileUtils.ln_s 'libelf.so', 'libelf_ext.so'
+      FileUtils.ln_s 'libelf.a', 'libelf_ext.a'
     end
   end
 
   $LIBPATH.unshift "#{CWD}/dst/lib"
   $INCFLAGS[0,0] = "-I#{CWD}/dst/include "
 
-  unless have_library('elf', 'gelf_getshdr')
+  unless have_library('elf_ext', 'gelf_getshdr')
     raise 'libelf build failed'
   end
 
