@@ -7,12 +7,66 @@ if RUBY_VERSION >= "1.9"
 end
 
 require 'mkmf'
+require 'fileutils'
+
+CWD = File.expand_path(File.dirname(__FILE__))
+
+def sys(cmd)
+  puts "  -- #{cmd}"
+  unless ret = xsystem(cmd)
+    raise "#{cmd} failed, please report to http://github.com/ice799/memprof/issues with pastie.org link to #{CWD}/mkmf.log"
+  end
+  ret
+end
 
 def add_define(name)
   $defs.push("-D#{name}")
 end
 
-if (add_define("HAVE_ELF") if have_library('elf', 'gelf_getshdr')) ||
-  (add_define("HAVE_MACH") if have_header('mach-o/dyld.h'))
+###
+# libelf
+
+if RUBY_PLATFORM =~ /linux/
+  libelf = File.basename('libelf-0.8.13.tar.gz')
+  dir = File.basename(libelf, '.tar.gz')
+
+  unless File.exists?("#{CWD}/dst/lib/libelf_ext.so")
+    puts "(I'm about to compile libelf.. this will definitely take a while)"
+
+    Dir.chdir('src') do
+      FileUtils.rm_rf(dir) if File.exists?(dir)
+
+      sys("tar zxvf #{libelf}")
+      Dir.chdir(dir) do
+        sys("./configure --prefix=#{CWD}/dst")
+        sys("make")
+        sys("make install")
+      end
+    end
+
+    Dir.chdir('dst/lib') do
+      FileUtils.ln_s 'libelf.so', 'libelf_ext.so'
+    end
+  end
+
+  $LIBPATH.unshift "#{CWD}/dst/lib"
+  $INCFLAGS[0,0] = "-I#{CWD}/dst/include "
+
+  unless have_library('elf', 'gelf_getshdr')
+    raise 'libelf build failed'
+  end
+
+  is_elf = true
+  add_define 'HAVE_ELF'
+end
+
+if have_header('mach-o/dyld')
+  is_macho = true
+  add_define 'HAVE_MACH'
+end
+
+if is_elf or is_macho
   create_makefile('memprof')
+else
+  raise 'unsupported platform'
 end

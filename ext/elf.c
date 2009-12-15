@@ -88,7 +88,7 @@ bin_init()
   if (elf_kind(elf) != ELF_K_ELF)
     errx(EX_DATAERR, "%s is not an ELF object.", filename);
 
-  if (elf_getshstrndx(elf, &shstrndx) == 0)
+  if (elf_getshdrstrndx(elf, &shstrndx) == -1)
     errx(EX_SOFTWARE, "getshstrndx() failed: %s.",
         elf_errmsg(-1));
 
