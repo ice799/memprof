@@ -8,6 +8,7 @@
 #include <libdwarf.h>
 #include <link.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sysexits.h>
 #include <unistd.h>
@@ -66,14 +67,200 @@ bin_find_symbol(char *sym, size_t *size)
   return NULL;
 }
 
-int
-bin_type_size(char *type)
+static Dwarf_Die
+check_die(Dwarf_Die die, char *search, Dwarf_Half type)
 {
+  char *name = 0;
+  Dwarf_Error error = 0;
+  Dwarf_Half tag = 0;
+  int ret = 0;
+  int res = dwarf_diename(die,&name,&error);
+  if (res == DW_DLV_ERROR) {
+    printf("Error in dwarf_diename\n");
+    exit(1);
+  }
+  if (res == DW_DLV_NO_ENTRY) {
+    return 0;
+  }
+
+  res = dwarf_tag(die,&tag,&error);
+  if (res != DW_DLV_OK) {
+    printf("Error in dwarf_tag\n");
+    exit(1);
+  }
+
+  if (tag == type && strcmp(name, search) == 0){
+    //printf("tag: %d name: '%s' die: %p\n",tag,name,die);
+    ret = 1;
+  }
+
+  dwarf_dealloc(dwrf,name,DW_DLA_STRING);
+
+  return ret ? die : 0;
+}
+
+static Dwarf_Die
+search_dies(Dwarf_Die die, char *name, Dwarf_Half type)
+{
+  int res = DW_DLV_ERROR;
+  Dwarf_Die cur_die=die;
+  Dwarf_Die child = 0;
+  Dwarf_Error error;
+  Dwarf_Die ret = 0;
+
+  ret = check_die(cur_die, name, type);
+  if (ret)
+    return ret;
+
+  for(;;) {
+    Dwarf_Die sib_die = 0;
+    res = dwarf_child(cur_die,&child,&error);
+    if (res == DW_DLV_ERROR) {
+      printf("Error in dwarf_child\n");
+      exit(1);
+    }
+    if (res == DW_DLV_OK) {
+      ret = search_dies(child,name,type);
+      if (ret) {
+        if (cur_die != die && cur_die != ret)
+          dwarf_dealloc(dwrf,cur_die,DW_DLA_DIE);
+        return ret;
+      }
+    }
+    /* res == DW_DLV_NO_ENTRY */
+
+    res = dwarf_siblingof(dwrf,cur_die,&sib_die,&error);
+    if (res == DW_DLV_ERROR) {
+      printf("Error in dwarf_siblingof\n");
+      exit(1);
+    }
+    if (res == DW_DLV_NO_ENTRY) {
+      /* Done at this level. */
+      break;
+    }
+    /* res == DW_DLV_OK */
+
+    if (cur_die != die)
+      dwarf_dealloc(dwrf,cur_die,DW_DLA_DIE);
+
+    cur_die = sib_die;
+    ret = check_die(cur_die, name, type);
+    if (ret)
+      return ret;
+  }
+  return 0;
+}
+
+static Dwarf_Die
+find_die(char *name, Dwarf_Half type)
+{
+  Dwarf_Die ret = 0;
+  Dwarf_Unsigned cu_header_length = 0;
+  Dwarf_Half version_stamp = 0;
+  Dwarf_Unsigned abbrev_offset = 0;
+  Dwarf_Half address_size = 0;
+  Dwarf_Unsigned next_cu_header = 0;
+  Dwarf_Error error;
+  int cu_number = 0;
+
+  Dwarf_Die no_die = 0;
+  Dwarf_Die cu_die = 0;
+  int res = DW_DLV_ERROR;
+
+  for (;;++cu_number) {
+    no_die = 0;
+    cu_die = 0;
+    res = DW_DLV_ERROR;
+
+    res = dwarf_next_cu_header(dwrf, &cu_header_length, &version_stamp, &abbrev_offset, &address_size, &next_cu_header, &error);
+
+    if (res == DW_DLV_ERROR) {
+      printf("Error in dwarf_next_cu_header\n");
+      exit(1);
+    }
+    if (res == DW_DLV_NO_ENTRY) {
+      /* Done. */
+      return 0;
+    }
+
+    /* The CU will have a single sibling, a cu_die. */
+    res = dwarf_siblingof(dwrf,no_die,&cu_die,&error);
+
+    if (res == DW_DLV_ERROR) {
+      printf("Error in dwarf_siblingof on CU die \n");
+      exit(1);
+    }
+    if (res == DW_DLV_NO_ENTRY) {
+      /* Impossible case. */
+      printf("no entry! in dwarf_siblingof on CU die \n");
+      exit(1);
+    }
+
+    ret = search_dies(cu_die,name,type);
+
+    if (cu_die != ret)
+      dwarf_dealloc(dwrf,cu_die,DW_DLA_DIE);
+
+    if (ret)
+      break;
+  }
+
+  /* traverse to the end to reset */
+  while ((dwarf_next_cu_header(dwrf, &cu_header_length, &version_stamp, &abbrev_offset, &address_size, &next_cu_header, &error)) != DW_DLV_NO_ENTRY);
+
+  return ret ? ret : 0;
+}
+
+int
+bin_type_size(char *name)
+{
+  Dwarf_Unsigned size = 0;
+  Dwarf_Error error;
+  int res = DW_DLV_ERROR;
+  Dwarf_Die die = 0;
+
+  die = find_die(name, DW_TAG_structure_type);
+
+  if (die) {
+    res = dwarf_bytesize(die, &size, &error);
+    dwarf_dealloc(dwrf,die,DW_DLA_DIE);
+    if (res == DW_DLV_OK)
+      return (int)size;
+  }
+
+  return -1;
 }
 
 int
 bin_type_member_offset(char *type, char *member)
 {
+  Dwarf_Error error;
+  int res = DW_DLV_ERROR;
+  Dwarf_Die die = 0, child = 0;
+  Dwarf_Attribute attr = 0;
+  Dwarf_Unsigned offset = 0;
+
+  die = find_die(type, DW_TAG_structure_type);
+
+  if (die) {
+    child = search_dies(die, member, DW_TAG_member);
+    dwarf_dealloc(dwrf,die,DW_DLA_DIE);
+
+    if (child) {
+      res = dwarf_attr(child, DW_AT_data_member_location, &attr, &error);
+      if (res == DW_DLV_OK) {
+        Dwarf_Locdesc *locs = 0;
+        Dwarf_Signed num = 0;
+
+        res = dwarf_loclist(attr, &locs, &num, &error);
+        if (res == DW_DLV_OK && num > 0) {
+          return locs[0].ld_s[0].lr_number;
+        }
+      }
+    }
+  }
+
+  return -1;
 }
 
 void
