@@ -158,7 +158,7 @@ objs_to_array(st_data_t key, st_data_t record, st_data_t arg)
   unsigned long count = (unsigned long)record;
   char *source = (char *)key;
   
-  asprintf(&(res->entries[res->num_entries++]), "%7d %s", count, source);
+  asprintf(&(res->entries[res->num_entries++]), "%7li %s", count, source);
 
   free(source);
   return ST_DELETE;
@@ -263,12 +263,12 @@ memprof_track(int argc, VALUE *argv, VALUE self)
 #include "re.h"
 
 yajl_gen_status
-yajl_gen_cstr(yajl_gen gen, const unsigned char * str)
+yajl_gen_cstr(yajl_gen gen, const char * str)
 {
   if (!str || str[0] == 0)
     return yajl_gen_null(gen);
   else
-    return yajl_gen_string(gen, str, strlen(str));
+    return yajl_gen_string(gen, (unsigned char *)str, strlen(str));
 }
 
 yajl_gen_status
@@ -282,7 +282,7 @@ yajl_gen_format(yajl_gen gen, char *format, ...)
   vasprintf(&str, format, args);
   va_end(args);
 
-  ret = yajl_gen_string(gen, str, strlen(str));
+  ret = yajl_gen_string(gen, (unsigned char *)str, strlen(str));
   free(str);
   return ret;
 }
@@ -517,7 +517,7 @@ obj_dump(VALUE obj, yajl_gen gen)
         yajl_gen_array_close(gen);
       } else {
         yajl_gen_cstr(gen, "data");
-        yajl_gen_string(gen, RSTRING(obj)->ptr, RSTRING(obj)->len);
+        yajl_gen_string(gen, (unsigned char *)RSTRING(obj)->ptr, RSTRING(obj)->len);
       }
       break;
 
@@ -661,7 +661,7 @@ objs_each_dump(st_data_t key, st_data_t record, st_data_t arg)
   return ST_CONTINUE;
 }
 
-yajl_print_t
+void
 json_print(void *ctx, const char * str, unsigned int len)
 {
   fwrite(str, sizeof(char), len, stdout);
@@ -812,7 +812,7 @@ update_callqs(int entry, void *trampee_addr)
 static void
 hook_freelist(int entry)
 {
-  long sizes[] = { 0, 0, 0 };
+  size_t sizes[] = { 0, 0, 0 };
   void *sym1 = bin_find_symbol("gc_sweep", &sizes[0]);
 
   if (sym1 == NULL) {

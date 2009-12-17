@@ -1,8 +1,10 @@
 #if defined(HAVE_ELF)
 
 #include "bin_api.h"
+#define _GNU_SOURCE
 
 #include <dwarf.h>
+#include <err.h>
 #include <fcntl.h>
 #include <gelf.h>
 #include <libdwarf.h>
@@ -238,7 +240,6 @@ bin_type_member_offset(char *type, char *member)
   int res = DW_DLV_ERROR;
   Dwarf_Die die = 0, child = 0;
   Dwarf_Attribute attr = 0;
-  Dwarf_Unsigned offset = 0;
 
   die = find_die(type, DW_TAG_structure_type);
 
@@ -269,15 +270,13 @@ bin_init()
   int fd;
   ElfW(Shdr) shdr;
   size_t shstrndx;
-  char *filename;
+  char *filename = "/proc/self/exe";
   Elf_Scn *scn;
   Dwarf_Error dwrf_err;
 
   if (elf_version(EV_CURRENT) == EV_NONE)
     errx(EX_SOFTWARE, "ELF library initialization failed: %s",
         elf_errmsg(-1));
-
-  asprintf(&filename, "/proc/%ld/exe", (long)getpid());
 
   if ((fd = open(filename, O_RDONLY, 0)) < 0)
     err(EX_NOINPUT, "open \%s\" failed", filename);
@@ -310,17 +309,17 @@ bin_init()
         symtab_shdr = shdr;
         if ((symtab_data = elf_getdata(scn,symtab_data)) == NULL || symtab_data->d_size == 0) {
           errx(EX_DATAERR, "ruby has a broken symbol table. Is it stripped? "
-                          "memprof only works on binaries that are not stripped!\n", filename);
+                           "memprof only works on binaries that are not stripped!");
         }
     }
   }
 
   if (!symtab_data) {
-    errx(EX_DATAERR, "binary is stripped. memprof only works on binaries that are not stripped!", filename);
+    errx(EX_DATAERR, "binary is stripped. memprof only works on binaries that are not stripped!");
   }
 
   if (dwarf_elf_init(elf, DW_DLC_READ, NULL, NULL, &dwrf, &dwrf_err) != DW_DLV_OK) {
-    errx(EX_DATAERR, "unable to read debugging data from binary. was it compiled with -g? is it unstripped?", filename);
+    errx(EX_DATAERR, "unable to read debugging data from binary. was it compiled with -g? is it unstripped?");
   }
 }
 #endif
