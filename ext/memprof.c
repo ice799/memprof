@@ -686,7 +686,8 @@ memprof_dump(int argc, VALUE *argv, VALUE self)
 static void
 create_tramp_table()
 {
-  int i, j = 0;
+  int i = 0;
+  void *region = NULL;
 
   struct tramp_tbl_entry ent = {
     .rbx_save      = {'\x53'},                // push rbx
@@ -723,22 +724,20 @@ create_tramp_table()
     .jmp_displacement = 0,
   };
 
-  if ((tramp_table = bin_allocate_page()) == MAP_FAILED) {
-    fprintf(stderr, "Failed to allocate memory for stage 1 trampoline.\n");
+  if ((region = bin_allocate_page()) == MAP_FAILED) {
+    fprintf(stderr, "Failed to allocate memory for stage 1 trampolines.\n");
     return;
   }
 
-  if ((inline_tramp_table = bin_allocate_page()) == MAP_FAILED) {
-    fprintf(stderr, "Faied to allocate memory for the stage 1 inline trampoline.\n");
-    return;
+  tramp_table = region;
+  inline_tramp_table = region + pagesize/2;
+
+  for (i = 0; i < (pagesize/2)/sizeof(struct tramp_tbl_entry); i++) {
+    memcpy(tramp_table + i, &ent, sizeof(struct tramp_tbl_entry));
   }
 
-  for (j = 0; j < pagesize/sizeof(struct tramp_tbl_entry); j ++ ) {
-    memcpy(tramp_table + j, &ent, sizeof(struct tramp_tbl_entry));
-  }
-
-  for (j = 0; j < pagesize/sizeof(struct inline_tramp_tbl_entry); j++) {
-    memcpy(inline_tramp_table + j, &inline_ent, sizeof(struct inline_tramp_tbl_entry));
+  for (i = 0; i < (pagesize/2)/sizeof(struct inline_tramp_tbl_entry); i++) {
+    memcpy(inline_tramp_table + i, &inline_ent, sizeof(struct inline_tramp_tbl_entry));
   }
 }
 

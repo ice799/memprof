@@ -80,4 +80,10 @@ bin_update_image(int entry, void *trampee_addr);
 void *
 bin_allocate_page();
 
+int
+bin_type_size(char *type);
+
+int
+bin_type_member_offset(char *type, char *member);
+
 #endif
