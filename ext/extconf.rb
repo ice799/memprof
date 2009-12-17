@@ -25,7 +25,7 @@ end
 yajl = File.basename('yajl-1.0.8.tar.gz')
 dir = File.basename(yajl, '.tar.gz')
 
-unless File.exists?("#{CWD}/src/#{dir}/src/libyajl_ext.so")
+unless File.exists?("#{CWD}/dst/lib/libyajl_ext.a")
   puts "(I'm about to compile yajl.. this will definitely take a while)"
 
   Dir.chdir('src') do
@@ -39,17 +39,23 @@ unless File.exists?("#{CWD}/src/#{dir}/src/libyajl_ext.so")
       end
 
       File.open("extconf.rb",'w') do |f|
-        f.puts "require 'mkmf'; $INCFLAGS[0,0] = '-I./api/ '; create_makefile 'libyajl_ext'"
+        f.puts "require 'mkmf'; $INCFLAGS[0,0] = '-I./api/ '; create_makefile 'libyajl'"
       end
       sys("#{Config::CONFIG['bindir']}/#{Config::CONFIG['ruby_install_name']} extconf.rb")
 
       sys("make")
+      sys("ar rv libyajl_ext.a #{Dir['*.o'].join(' ')}")
+
+      FileUtils.mkdir_p "#{CWD}/dst/lib"
+      FileUtils.cp 'libyajl_ext.a', "#{CWD}/dst/lib"
+      FileUtils.mkdir_p "#{CWD}/dst/include"
+      FileUtils.cp_r 'api/yajl', "#{CWD}/dst/include/"
     end
   end
 end
 
-$LIBPATH.unshift "#{CWD}/src/#{dir}/src/"
-$INCFLAGS[0,0] = "-I#{CWD}/src/#{dir}/src/api/ "
+$LIBPATH.unshift "#{CWD}/dst/lib"
+$INCFLAGS[0,0] = "-I#{CWD}/dst/include "
 
 unless have_library('yajl_ext') and have_header('yajl/yajl_gen.h')
   raise 'Yajl build failed'
