@@ -99,7 +99,7 @@ if RUBY_PLATFORM =~ /linux/
   libdwarf = File.basename('libdwarf-20091118.tar.gz')
   dir = File.basename(libdwarf, '.tar.gz').sub('lib','')
 
-  unless File.exists?("#{CWD}/src/#{dir}/libdwarf/libdwarf_ext.a")
+  unless File.exists?("#{CWD}/dst/lib/libdwarf_ext.a")
     puts "(I'm about to compile libdwarf.. this will definitely take a while)"
 
     Dir.chdir('src') do
