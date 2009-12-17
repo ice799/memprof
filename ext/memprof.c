@@ -36,6 +36,7 @@ struct inline_tramp_tbl_entry *inline_tramp_table = NULL;
 /*
  * bleak_house stuff
  */
+static VALUE eUnsupported;
 static int track_objs = 0;
 static st_table *objs = NULL;
 
@@ -677,6 +678,50 @@ memprof_dump(int argc, VALUE *argv, VALUE self)
   yajl_gen_array_open(gen);
   st_foreach(objs, objs_each_dump, (st_data_t)gen);
   yajl_gen_array_close(gen);
+  yajl_gen_free(gen);
+
+  track_objs = 1;
+
+  return Qnil;
+}
+
+static VALUE
+memprof_dump_all(int argc, VALUE *argv, VALUE self)
+{
+  int sizeof_RVALUE = bin_type_size("RVALUE");
+  void *heaps = *(void**)bin_find_symbol("heaps",0);
+  int heaps_used = *(int*)bin_find_symbol("heaps_used",0);
+  int sizeof_heaps_slot = bin_type_size("heaps_slot");
+  int offset_limit = bin_type_member_offset("heaps_slot", "limit");
+  int offset_slot = bin_type_member_offset("heaps_slot", "slot");
+  void *p, *pend;
+  int i, limit;
+
+  if (sizeof_RVALUE < 0 || sizeof_heaps_slot < 0)
+    rb_raise(eUnsupported, "could not find internal heap");
+
+  yajl_gen_config conf = { .beautify = 1, .indentString = "  " };
+  yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, NULL);
+
+  track_objs = 0;
+
+  yajl_gen_array_open(gen);
+
+  for (i=0; i < heaps_used; i++) {
+    p = *(void**)(heaps + (i * sizeof_heaps_slot) + offset_slot);
+    limit = *(int*)(heaps + (i * sizeof_heaps_slot) + offset_limit);
+    pend = p + (sizeof_RVALUE * limit);
+
+    while (p < pend) {
+      if (RBASIC(p)->flags)
+        obj_dump((VALUE)p, gen);
+
+      p += sizeof_RVALUE;
+    }
+  }
+
+  yajl_gen_array_close(gen);
+  yajl_gen_free(gen);
 
   track_objs = 1;
 
@@ -916,12 +961,14 @@ void
 Init_memprof()
 {
   VALUE memprof = rb_define_module("Memprof");
+  eUnsupported = rb_define_class_under(memprof, "Unsupported", rb_eStandardError);
   rb_define_singleton_method(memprof, "start", memprof_start, 0);
   rb_define_singleton_method(memprof, "stop", memprof_stop, 0);
   rb_define_singleton_method(memprof, "stats", memprof_stats, -1);
   rb_define_singleton_method(memprof, "stats!", memprof_stats_bang, -1);
   rb_define_singleton_method(memprof, "track", memprof_track, -1);
   rb_define_singleton_method(memprof, "dump", memprof_dump, -1);
+  rb_define_singleton_method(memprof, "dump_all", memprof_dump_all, -1);
 
   pagesize = getpagesize();
   objs = st_init_numtable();
