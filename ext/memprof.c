@@ -689,12 +689,12 @@ static VALUE
 memprof_dump_all(int argc, VALUE *argv, VALUE self)
 {
   int sizeof_RVALUE = bin_type_size("RVALUE");
-  void *heaps = *(void**)bin_find_symbol("heaps",0);
+  char *heaps = *(char**)bin_find_symbol("heaps",0);
   int heaps_used = *(int*)bin_find_symbol("heaps_used",0);
   int sizeof_heaps_slot = bin_type_size("heaps_slot");
   int offset_limit = bin_type_member_offset("heaps_slot", "limit");
   int offset_slot = bin_type_member_offset("heaps_slot", "slot");
-  void *p, *pend;
+  char *p, *pend;
   int i, limit;
 
   if (sizeof_RVALUE < 0 || sizeof_heaps_slot < 0)
@@ -708,7 +708,7 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   yajl_gen_array_open(gen);
 
   for (i=0; i < heaps_used; i++) {
-    p = *(void**)(heaps + (i * sizeof_heaps_slot) + offset_slot);
+    p = *(char**)(heaps + (i * sizeof_heaps_slot) + offset_slot);
     limit = *(int*)(heaps + (i * sizeof_heaps_slot) + offset_limit);
     pend = p + (sizeof_RVALUE * limit);
 
