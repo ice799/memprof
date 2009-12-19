@@ -59,6 +59,7 @@ int
 arch_insert_inline_st2_tramp(void *addr, void *marker, void *trampoline, void *table_entry)
 {
   struct inline_st1_base *base = addr;
+  struct inline_tramp_st2_entry *entry = table_entry;
 
   if (!arch_check_ins(base))
     return 1;
@@ -93,14 +94,14 @@ arch_insert_inline_st2_tramp(void *addr, void *marker, void *trampoline, void *t
      *
      * This is used to replicate the original instruction we overwrote.
      */
-    default_inline_st2_tramp.mov_displacement = marker - (void *)&(default_inline_st2_tramp.frame);
+    default_inline_st2_tramp.mov_displacement = marker - (void *)&(entry->frame);
 
     /* fill in the displacement to freelist from the next instruction.
      *
      * This is to arrange for the new value in freelist to be in %rdi, and as such
      * be the first argument to the C handler. As per the amd64 ABI.
      */
-    default_inline_st2_tramp.frame.rdi_source_displacement = marker -(void *) &(default_inline_st2_tramp.frame.push_rbx);
+    default_inline_st2_tramp.frame.rdi_source_displacement = marker - (void *)&(entry->frame.push_rbx);
 
     /* jmp back to the instruction after stage 1 trampoline was inserted
      *
