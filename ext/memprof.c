@@ -15,6 +15,7 @@
 #include <intern.h>
 #include <node.h>
 
+#include "arch.h"
 #include "bin_api.h"
 
 size_t pagesize;
@@ -24,14 +25,14 @@ unsigned long text_segment_len = 0;
 /*
    trampoline specific stuff
  */
-struct tramp_tbl_entry *tramp_table = NULL;
+struct tramp_st2_entry *tramp_table = NULL;
 size_t tramp_size = 0;
 
 /*
    inline trampoline specific stuff
  */
 size_t inline_tramp_size = 0;
-struct inline_tramp_tbl_entry *inline_tramp_table = NULL;
+struct inline_tramp_st2_entry *inline_tramp_table = NULL;
 
 /*
  * bleak_house stuff
@@ -44,13 +45,6 @@ struct obj_track {
   char *source;
   int line;
 };
-
-static void
-error_tramp()
-{
-  printf("WARNING: NO TRAMPOLINE SET.\n");
-  return;
-}
 
 static VALUE
 newobj_tramp()
@@ -87,7 +81,6 @@ static void
 freelist_tramp(unsigned long rval)
 {
   struct obj_track *tracker = NULL;
-
   if (track_objs) {
     st_delete(objs, (st_data_t *) &rval, (st_data_t *) &tracker);
     if (tracker) {
@@ -261,41 +254,10 @@ create_tramp_table()
 {
   int i = 0;
   void *region = NULL;
+   size_t tramp_sz = 0, inline_tramp_sz = 0;
 
-  struct tramp_tbl_entry ent = {
-    .rbx_save      = {'\x53'},                // push rbx
-    .mov           = {'\x48', '\xbb'},        // mov addr into rbx
-    .addr          = error_tramp,             // ^^^
-    .callq         = {'\xff', '\xd3'},        // callq rbx
-    .rbx_restore   = {'\x5b'},                // pop rbx
-    .ret           = {'\xc3'},                // ret
-  };
-
-  struct inline_tramp_tbl_entry inline_ent = {
-    .rex     = {'\x48'},
-    .mov     = {'\x89'},
-    .src_reg = {'\x05'},
-    .mov_displacement = 0,
-
-    .frame = {
-      .push_rdi = {'\x57'},
-      .mov_rdi = {'\x48', '\x8b', '\x3d'},
-      .rdi_source_displacement = 0,
-      .push_rbx = {'\x53'},
-      .push_rbp = {'\x55'},
-      .save_rsp = {'\x48', '\x89', '\xe5'},
-      .align_rsp = {'\x48', '\x83', '\xe4', '\xf0'},
-      .mov = {'\x48', '\xbb'},
-      .addr = error_tramp,
-      .callq = {'\xff', '\xd3'},
-      .leave = {'\xc9'},
-      .rbx_restore = {'\x5b'},
-      .rdi_restore = {'\x5f'},
-    },
-
-    .jmp  = {'\xe9'},
-    .jmp_displacement = 0,
-  };
+  void *ent = arch_get_st2_tramp(&tramp_sz);
+  void *inline_ent = arch_get_inline_st2_tramp(&inline_tramp_sz);
 
   if ((region = bin_allocate_page()) == MAP_FAILED) {
     fprintf(stderr, "Failed to allocate memory for stage 1 trampolines.\n");
@@ -305,159 +267,83 @@ create_tramp_table()
   tramp_table = region;
   inline_tramp_table = region + pagesize/2;
 
-  for (i = 0; i < (pagesize/2)/sizeof(struct tramp_tbl_entry); i++) {
-    memcpy(tramp_table + i, &ent, sizeof(struct tramp_tbl_entry));
+  for (i = 0; i < (pagesize/2)/tramp_sz; i++) {
+    memcpy(tramp_table + i, ent, tramp_sz);
   }
 
-  for (i = 0; i < (pagesize/2)/sizeof(struct inline_tramp_tbl_entry); i++) {
-    memcpy(inline_tramp_table + i, &inline_ent, sizeof(struct inline_tramp_tbl_entry));
+  for (i = 0; i < (pagesize/2)/inline_tramp_sz; i++) {
+    memcpy(inline_tramp_table + i, inline_ent, inline_tramp_sz);
   }
 }
 
 void
-update_callqs(int entry, void *trampee_addr)
+update_callqs(int entry, void *trampee, void *tramp)
 {
-  char *byte = text_segment;
+  unsigned char *byte = text_segment;
   size_t count = 0;
-  int fn_addr = 0;
-  void *aligned_addr = NULL;
 
-  for(; count < text_segment_len; count++) {
-    if (*byte == '\xe8') {
-      fn_addr = *(int *)(byte+1);
-      if (((void *)trampee_addr - (void *)(byte+5)) == fn_addr) {
-        aligned_addr = (void*)(((long)byte+1)&~(0xffff));
-        mprotect(aligned_addr, (((void *)byte+1) - aligned_addr) + 10, PROT_READ|PROT_WRITE|PROT_EXEC);
-        *(int  *)(byte+1) = (uint32_t)((void *)(tramp_table + entry) - (void *)(byte + 5));
-        mprotect(aligned_addr, (((void *)byte+1) - aligned_addr) + 10, PROT_READ|PROT_EXEC);
-      }
-    }
-    byte++;
+  for(; count < text_segment_len; byte++, count++) {
+    arch_insert_st1_tramp(byte, trampee, tramp);
   }
 }
 
+#define FREELIST_INLINES (3)
 
 static void
 hook_freelist(int entry)
 {
-  long sizes[] = { 0, 0, 0 };
-  void *sym1 = bin_find_symbol("gc_sweep", &sizes[0]);
+   size_t sizes[FREELIST_INLINES], i = 0;
+  void *freelist_inliners[FREELIST_INLINES];
+  void *freelist = NULL;
+  unsigned char *byte = NULL;
 
-  if (sym1 == NULL) {
-    /* this is MRI ... */
-    sym1 = bin_find_symbol("garbage_collect", &sizes[0]);
+  freelist_inliners[0] = bin_find_symbol("gc_sweep", &sizes[0]);
+  /* sometimes gc_sweep gets inlined in garbage_collect */
+  if (!freelist_inliners[0]) {
+    freelist_inliners[0] = bin_find_symbol("garbage_collect", &sizes[0]);
+    if (!freelist_inliners[0]) {
+      /* couldn't find garbage_collect either. */
+      fprintf(stderr, "Couldn't find gc_sweep or garbage_collect!\n");
+      return;
+    }
   }
 
-  void *sym2 = bin_find_symbol("finalize_list", &sizes[1]);
-  void *sym3 = bin_find_symbol("rb_gc_force_recycle", &sizes[2]);
-  void *freelist_callers[] = { sym1, sym2, sym3 };
-  int max = 3;
-  size_t i = 0;
-  char *byte = freelist_callers[0];
-  void *freelist = bin_find_symbol("freelist", NULL);
-  uint32_t mov_target =  0;
-  void *aligned_addr = NULL;
-  size_t count = 0;
+  freelist_inliners[1] = bin_find_symbol("finalize_list", &sizes[1]);
+  if (!freelist_inliners[1]) {
+    fprintf(stderr, "Couldn't find finalize_list!\n");
+    /* XXX continue or exit? */
+  }
 
-  /* This is the stage 1 trampoline for hooking the inlined add_freelist
-   * function .
-   *
-   * NOTE: The original instruction mov %reg, freelist is 7 bytes wide,
-   * whereas jmpq $displacement is only 5 bytes wide. We *must* pad out
-   * the next two bytes. This will be important to remember below.
-   */
-  struct tramp_inline tramp = {
-    .jmp           = {'\xe9'},
-    .displacement  = 0,
-    .pad           = {'\x90', '\x90'},
-  };
+  freelist_inliners[2] = bin_find_symbol("rb_gc_force_recycle", &sizes[2]);
+  if (!freelist_inliners[2]) {
+    fprintf(stderr, "Couldn't find rb_gc_force_recycle!\n");
+    /* XXX continue or exit? */
+  }
 
-  struct inline_tramp_tbl_entry *inl_tramp_st2 = NULL;
+  freelist = bin_find_symbol("freelist", NULL);
+  if (!freelist) {
+    fprintf(stderr, "Couldn't find freelist!\n");
+    return;
+  }
 
-  for (;i < max;) {
-    /* make sure it is a mov instruction */
-    if (byte[1] == '\x89') {
+  /* start the search for places to insert the inline tramp */
 
-      /* Read the REX byte to make sure it is a mov that we care about */
-      if ((byte[0] == '\x48') ||
-          (byte[0] == '\x4c')) {
+  byte = freelist_inliners[i];
 
-        /* Grab the target of the mov. REMEMBER: in this case the target is 
-         * a 32bit displacment that gets added to RIP (where RIP is the adress of
-         * the next instruction).
-         */
-        mov_target = *(uint32_t *)(byte + 3);
-
-        /* Sanity check. Ensure that the displacement from freelist to the next
-         * instruction matches the mov_target. If so, we know this mov is
-         * updating freelist.
-         */
-        if ((freelist - (void *)(byte+7)) == mov_target) {
-          /* Before the stage 1 trampoline gets written, we need to generate
-           * the code for the stage 2 trampoline. Let's copy over the REX byte
-           * and the byte which mentions the source register into the stage 2
-           * trampoline.
-           */
-          inl_tramp_st2 = inline_tramp_table + entry;
-          inl_tramp_st2->rex[0] = byte[0];
-          inl_tramp_st2->src_reg[0] = byte[2];
-
-          /* Setup the stage 1 trampoline. Calculate the displacement to
-           * the stage 2 trampoline from the next instruction.
-           *
-           * REMEMBER!!!! The next instruction will be NOP after our stage 1
-           * trampoline is written. This is 5 bytes into the structure, even
-           * though the original instruction we overwrote was 7 bytes.
-           */
-          tramp.displacement = (uint32_t)((void *)(inl_tramp_st2) - (void *)(byte+5));
-
-          /* Figure out what page the stage 1 tramp is gonna be written to, mark
-           * it WRITE, write the trampoline in, and then remove WRITE permission.
-           */
-          aligned_addr = (void*)(((long)byte)&~(0xffff));
-          mprotect(aligned_addr, (((void *)byte) - aligned_addr) + 10, PROT_READ|PROT_WRITE|PROT_EXEC);
-          memcpy(byte, &tramp, sizeof(struct tramp_inline));
-          mprotect(aligned_addr, (((void *)byte) - aligned_addr) + 10, PROT_READ|PROT_EXEC);
-
-          /* Finish setting up the stage 2 trampoline. */
-
-          /* calculate the displacement to freelist from the next instruction.
-           *
-           * This is used to replicate the original instruction we overwrote.
-           */
-          inl_tramp_st2->mov_displacement = freelist - (void *)&(inl_tramp_st2->frame);
-
-          /* fill in the displacement to freelist from the next instruction.
-           *
-           * This is to arrange for the new value in freelist to be in %rdi, and as such
-           * be the first argument to the C handler. As per the amd64 ABI.
-           */
-          inl_tramp_st2->frame.rdi_source_displacement = freelist - (void *)&(inl_tramp_st2->frame.push_rbx);
-
-          /* jmp back to the instruction after stage 1 trampoline was inserted 
-           *
-           * This can be 5 or 7, it doesn't matter. If its 5, we'll hit our 2
-           * NOPS. If its 7, we'll land directly on the next instruction.
-           */
-          inl_tramp_st2->jmp_displacement = (uint32_t)((void *)(byte + 7) -
-                                                       (void *)(inline_tramp_table + entry + 1));
-
-          /* write the address of our C level trampoline in to the structure */
-          inl_tramp_st2->frame.addr = freelist_tramp;
-
-          /* track the new entry and new trampoline size */
-          entry++;
-          inline_tramp_size++;
-        }
-      }
+  while (i < FREELIST_INLINES) {
+    if (arch_insert_inline_st2_tramp(byte, freelist, freelist_tramp,
+        &inline_tramp_table[entry]) == 0) {
+      /* insert occurred, so increment internal counters for the tramp table */
+      entry++;
+      inline_tramp_size++;
     }
 
-    if (count >= sizes[i]) {
-        count = 0;
-        i ++;
-        byte = freelist_callers[i];
+    /* if we've looked at all the bytes in this function... */
+    if (((void *)byte - freelist_inliners[i]) >= sizes[i]) {
+      /* move on to the next function */
+      i++;
+      byte = freelist_inliners[i];
     }
-    count++;
     byte++;
   }
 }
@@ -472,7 +358,6 @@ insert_tramp(char *trampee, void *tramp)
   if (trampee_addr == NULL) {
     if (strcmp("add_freelist", trampee) == 0) {
       /* XXX super hack */
-      inline_tramp_table[inline_tramp_size].frame.addr = tramp;
       inline_tramp_size++;
       hook_freelist(inline_ent);
     } else {
@@ -480,8 +365,8 @@ insert_tramp(char *trampee, void *tramp)
     }
   } else {
     tramp_table[tramp_size].addr = tramp;
+    bin_update_image(entry, trampee_addr, &tramp_table[tramp_size]);
     tramp_size++;
-    bin_update_image(entry, trampee_addr);
   }
 }
 

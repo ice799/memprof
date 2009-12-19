@@ -23,9 +23,16 @@ def add_define(name)
   $defs.push("-D#{name}")
 end
 
+arch = RUBY_PLATFORM[/(.*)-linux/,1]
+
+if arch == 'universal'
+  arch = 'x86_64'
+end
+
+add_define "_ARCH_#{arch}_"
+
 ###
 # libelf
-
 if RUBY_PLATFORM =~ /linux/
   libelf = File.basename('libelf-0.8.13.tar.gz')
   dir = File.basename(libelf, '.tar.gz')

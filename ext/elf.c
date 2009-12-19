@@ -1,9 +1,10 @@
 #if defined(HAVE_ELF)
-
+#define _GNU_SOURCE
 #include "bin_api.h"
 
+#include <err.h>
 #include <fcntl.h>
-#include <gelf.h>
+#include <libelf/gelf.h>
 #include <link.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,7 +13,7 @@
 
 #include <sys/mman.h>
 
-static ElfW(Shdr) symtab_shdr;
+static GElf_Shdr symtab_shdr;
 static Elf *elf = NULL;
 static Elf_Data *symtab_data = NULL;
 
@@ -30,9 +31,9 @@ bin_allocate_page()
 }
 
 void
-bin_update_image(int entry, void *trampee_addr)
+bin_update_image(int entry, void *trampee, void *tramp)
 {
-  update_callqs(entry, trampee_addr);
+  update_callqs(entry, trampee, tramp);
 }
 
 void *
@@ -67,7 +68,7 @@ void
 bin_init()
 {
   int fd;
-  ElfW(Shdr) shdr;
+	GElf_Shdr shdr;
   size_t shstrndx;
   char *filename;
   Elf_Scn *scn;
@@ -109,13 +110,13 @@ bin_init()
         symtab_shdr = shdr;
         if ((symtab_data = elf_getdata(scn,symtab_data)) == NULL || symtab_data->d_size == 0) {
           errx(EX_DATAERR, "ruby has a broken symbol table. Is it stripped? "
-                          "memprof only works on binaries that are not stripped!\n", filename);
+                          "memprof only works on binaries that are not stripped!\n");
         }
     }
   }
 
   if (!symtab_data) {
-    errx(EX_DATAERR, "binary is stripped. memprof only works on binaries that are not stripped!", filename);
+    errx(EX_DATAERR, "binary is stripped. memprof only works on binaries that are not stripped!");
   }
 }
 #endif
