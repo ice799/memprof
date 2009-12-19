@@ -292,7 +292,7 @@ update_callqs(int entry, void *trampee, void *tramp)
 static void
 hook_freelist(int entry)
 {
-   size_t sizes[FREELIST_INLINES], i = 0;
+  size_t sizes[FREELIST_INLINES], i = 0;
   void *freelist_inliners[FREELIST_INLINES];
   void *freelist = NULL;
   unsigned char *byte = NULL;
