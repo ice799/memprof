@@ -660,14 +660,29 @@ objs_each_dump(st_data_t key, st_data_t record, st_data_t arg)
 void
 json_print(void *ctx, const char * str, unsigned int len)
 {
-  fwrite(str, sizeof(char), len, stdout);
+  FILE *out = (FILE *)ctx;
+  fwrite(str, sizeof(char), len, out ? out : stdout);
 }
 
 static VALUE
 memprof_dump(int argc, VALUE *argv, VALUE self)
 {
+  VALUE str;
+  FILE *out = NULL;
+
+  if (!track_objs)
+    rb_raise(rb_eRuntimeError, "object tracking disabled, call Memprof.start first");
+
+  rb_scan_args(argc, argv, "01", &str);
+
+  if (RTEST(str)) {
+    out = fopen(StringValueCStr(str), "w");
+    if (!out)
+      rb_raise(rb_eArgError, "unable to open output file");
+  }
+
   yajl_gen_config conf = { .beautify = 1, .indentString = "  " };
-  yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, NULL);
+  yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)out);
 
   track_objs = 0;
 
@@ -675,6 +690,9 @@ memprof_dump(int argc, VALUE *argv, VALUE self)
   st_foreach(objs, objs_each_dump, (st_data_t)gen);
   yajl_gen_array_close(gen);
   yajl_gen_free(gen);
+
+  if (out)
+    fclose(out);
 
   track_objs = 1;
 
@@ -696,8 +714,19 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   if (sizeof_RVALUE < 0 || sizeof_heaps_slot < 0)
     rb_raise(eUnsupported, "could not find internal heap");
 
+  VALUE str;
+  FILE *out = NULL;
+
+  rb_scan_args(argc, argv, "01", &str);
+
+  if (RTEST(str)) {
+    out = fopen(StringValueCStr(str), "w");
+    if (!out)
+      rb_raise(rb_eArgError, "unable to open output file");
+  }
+
   yajl_gen_config conf = { .beautify = 1, .indentString = "  " };
-  yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, NULL);
+  yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)out);
 
   track_objs = 0;
 
@@ -718,6 +747,9 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
 
   yajl_gen_array_close(gen);
   yajl_gen_free(gen);
+
+  if (out)
+    fclose(out);
 
   track_objs = 1;
 
