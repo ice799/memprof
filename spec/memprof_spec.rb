@@ -17,12 +17,35 @@ describe Memprof do
     File.read(filename)
   end
 
+  before do
+    Memprof.stop
+  end
+
   should 'print stats to a file' do
     Memprof.start
     "abc"
     Memprof.stats(filename)
 
     filedata.strip.should == "1 #{__FILE__}:#{__LINE__-3}:String"
+  end
+
+  should 'allow calling ::stats multiple times' do
+    Memprof.start
+    []
+    Memprof.stats(filename)
+    []
+    Memprof.stats(filename)
+
+    filedata.strip.split("\n").size.should == 2
+  end
+
+  should 'clear stats after ::stats!' do
+    Memprof.start
+    []
+    Memprof.stats!(filename)
+    Memprof.stats(filename)
+
+    filedata.strip.should.be.empty
   end
 
   should 'collect stats via ::track' do
@@ -44,7 +67,6 @@ describe Memprof do
   end
 
   should 'raise error when calling ::stats or ::dump without ::start' do
-    Memprof.stop
     lambda{ Memprof.stats }.should.raise(RuntimeError).message.should =~ /Memprof.start/
     lambda{ Memprof.dump }.should.raise(RuntimeError).message.should =~ /Memprof.start/
   end
