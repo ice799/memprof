@@ -1,13 +1,12 @@
 #if defined(HAVE_ELF)
-
-#include "bin_api.h"
 #define _GNU_SOURCE
+#include "bin_api.h"
 
 #include <dwarf.h>
 #include <err.h>
 #include <fcntl.h>
-#include <gelf.h>
 #include <libdwarf.h>
+#include <libelf/gelf.h>
 #include <link.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,7 +16,7 @@
 
 #include <sys/mman.h>
 
-static ElfW(Shdr) symtab_shdr;
+static GElf_Shdr symtab_shdr;
 static Elf *elf = NULL;
 static Elf_Data *symtab_data = NULL;
 
@@ -37,9 +36,9 @@ bin_allocate_page()
 }
 
 void
-bin_update_image(int entry, void *trampee_addr)
+bin_update_image(int entry, void *trampee, void *tramp)
 {
-  update_callqs(entry, trampee_addr);
+  update_callqs(entry, trampee, tramp);
 }
 
 void *
@@ -268,7 +267,7 @@ void
 bin_init()
 {
   int fd;
-  ElfW(Shdr) shdr;
+  GElf_Shdr shdr;
   size_t shstrndx;
   char *filename = "/proc/self/exe";
   Elf_Scn *scn;

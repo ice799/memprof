@@ -147,6 +147,12 @@ if have_header('mach-o/dyld')
   add_define 'HAVE_MACH'
 end
 
+arch = RUBY_PLATFORM[/(.*)-linux/,1]
+if arch == 'universal'
+  arch = 'x86_64'
+end
+add_define "_ARCH_#{arch}_"
+
 if is_elf or is_macho
   create_makefile('memprof')
 else
