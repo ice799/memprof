@@ -25,12 +25,39 @@ describe Memprof do
     filedata.strip.should == "1 #{__FILE__}:#{__LINE__-3}:String"
   end
 
-  should 'collect stats via #track' do
+  should 'collect stats via ::track' do
     Memprof.track(filename) do
       "abc"
     end
 
     filedata.should =~ /1 #{__FILE__}:#{__LINE__-3}:String/
+  end
+
+  should 'dump objects as json' do
+    Memprof.start
+    1.23+1
+    Memprof.dump(filename)
+
+    filedata.should =~ /"source": "#{__FILE__}:#{__LINE__-3}"/
+    filedata.should =~ /"type": "float"/
+    filedata.should =~ /"data": 2\.23/
+  end
+
+  should 'raise error when calling ::stats or ::dump without ::start' do
+    Memprof.stop
+    lambda{ Memprof.stats }.should.raise(RuntimeError).message.should =~ /Memprof.start/
+    lambda{ Memprof.dump }.should.raise(RuntimeError).message.should =~ /Memprof.start/
+  end
+
+  should 'dump out the entire heap' do
+    Memprof.stop
+    Memprof.dump_all(filename)
+
+    File.open(filename, 'r').each_line do |line|
+      if line =~ /"data": "dump out the entire heap"/
+        break :found
+      end
+    end.should == :found
   end
 end
 
