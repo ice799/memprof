@@ -232,6 +232,9 @@ memprof_stats(int argc, VALUE *argv, VALUE self)
   }
   free(res.entries);
 
+  if (out)
+    fclose(out);
+
   track_objs = 1;
   return Qnil;
 }
