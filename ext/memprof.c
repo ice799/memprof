@@ -19,8 +19,6 @@
 #include "bin_api.h"
 
 size_t pagesize;
-void *text_segment = NULL;
-unsigned long text_segment_len = 0;
 
 /*
    trampoline specific stuff
@@ -783,17 +781,6 @@ create_tramp_table()
   }
 }
 
-void
-update_callqs(int entry, void *trampee, void *tramp)
-{
-  unsigned char *byte = text_segment;
-  size_t count = 0;
-
-  for(; count < text_segment_len; byte++, count++) {
-    arch_insert_st1_tramp(byte, trampee, tramp);
-  }
-}
-
 #define FREELIST_INLINES (3)
 
 static void
@@ -859,8 +846,10 @@ static void
 insert_tramp(char *trampee, void *tramp)
 {
   void *trampee_addr = bin_find_symbol(trampee, NULL);
+  void *plt_addr = NULL;
   int entry = tramp_size;
   int inline_ent = inline_tramp_size;
+  void *info;
 
   if (trampee_addr == NULL) {
     if (strcmp("add_freelist", trampee) == 0) {
@@ -872,7 +861,7 @@ insert_tramp(char *trampee, void *tramp)
     }
   } else {
     tramp_table[tramp_size].addr = tramp;
-    bin_update_image(entry, trampee_addr, &tramp_table[tramp_size]);
+    bin_update_image(entry, trampee, &tramp_table[tramp_size]);
     tramp_size++;
   }
 }

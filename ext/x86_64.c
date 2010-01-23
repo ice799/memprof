@@ -15,7 +15,7 @@
  */
 struct inline_st1_tramp {
   unsigned char jmp;
-  uint32_t displacement;
+  int32_t displacement;
   unsigned char pad[2];
 } __attribute__((__packed__)) inline_st1_tramp = {
   .jmp  = '\xe9',
@@ -27,7 +27,7 @@ struct inline_st1_base {
   unsigned char rex;
   unsigned char mov;
   unsigned char src_reg;
-  uint32_t displacement;
+  int32_t displacement;
 } __attribute__((__packed__)) inline_st1_mov = {
   .rex = 0,
   .mov = '\x89',

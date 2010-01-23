@@ -1,6 +1,6 @@
 spec = Gem::Specification.new do |s|
   s.name = 'memprof'
-  s.version = '0.1.3'
+  s.version = '0.2.0'
   s.date = '2009-12-14'
   s.summary = 'Ruby Memory Profiler'
   s.description = "Ruby memory profiler similar to bleak_house, but without patches to the Ruby VM"

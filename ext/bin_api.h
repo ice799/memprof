@@ -3,9 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* generic file format stuff */
-extern void *text_segment;
-extern unsigned long text_segment_len;
+/* XXX get rid of this */
 extern size_t pagesize;
 
 /*
@@ -20,9 +18,6 @@ extern size_t tramp_size;
 extern struct inline_tramp_st2_entry *inline_tramp_table;
 extern size_t inline_tramp_size;
 
-void
-update_callqs(int entry, void *trampee_addr, void *tramp);
-
 /*
  *  EXPORTED API.
  */
@@ -32,8 +27,8 @@ bin_init();
 void *
 bin_find_symbol(char *sym, size_t *size);
 
-void
-bin_update_image(int entry, void *trampee_addr, void *tramp);
+void *
+bin_find_got_addr(char *sym, void *cookie);
 
 void *
 bin_allocate_page();
@@ -44,4 +39,6 @@ bin_type_size(char *type);
 int
 bin_type_member_offset(char *type, char *member);
 
+void
+bin_update_image(int entry, char *trampee_addr, struct tramp_st2_entry *tramp);
 #endif

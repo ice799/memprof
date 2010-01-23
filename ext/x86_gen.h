@@ -10,11 +10,17 @@
  */
 struct st1_base {
   unsigned char call;
-  uint32_t displacement;
+  int32_t displacement;
 } __attribute__((__packed__)) st1_mov = {
   .call        =  '\xe8',
   .displacement =  0,
 };
+
+struct plt_entry {
+    unsigned char jmp[2];
+    uint32_t jmp_disp;
+    unsigned char pad[10];
+} __attribute__((__packed__));
 
 static inline void *
 page_align(void *addr)
@@ -29,6 +35,8 @@ copy_instructions(void *to, void *from, size_t count)
   mprotect(aligned_addr, (to - aligned_addr) + 10, PROT_READ|PROT_WRITE|PROT_EXEC);
   memcpy(to, from, count);
   mprotect(aligned_addr, (to - aligned_addr) + 10, PROT_READ|PROT_EXEC);
+
+  return;
 }
 
 #define WRITE_INSTRUCTIONS(start, len, stmt) do { \
@@ -52,6 +60,21 @@ arch_insert_st1_tramp(void *start, void *trampee, void *tramp)
                          (check->displacement = (tramp - (void *)(check + 1))));
     }
   }
+
+  return;
+}
+
+static void *
+get_got_addr(struct plt_entry *plt)
+{
+  return (void *)&(plt->pad) + plt->jmp_disp;
+}
+
+void
+arch_overwrite_got(void *plt, void *tramp)
+{
+  memcpy(get_got_addr(plt), &tramp, sizeof(void *));
+  return;
 }
 
 void *

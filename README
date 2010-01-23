@@ -42,9 +42,12 @@ Currently supporting:
 
   Linux:
     x86_64 builds of Ruby Enterprise Edition 1.8.6/1.8.7
-    x86_64 builds of MRI Ruby if built with --disable-shared
+    x86_64 builds of MRI Ruby (enabled-shared and disable-shared)
 
-Experimental support:
+Experimental (somewhat broken) support:
+
+  Linux:
+    i386/i686 support.
 
   Snow Leopard:
     x86_64 builds of MRI (both enable-shared and disable-shared)
@@ -56,9 +59,6 @@ Coming soon:
 
   Linux:
     Tracking object allocationns in C extensions.
-    x86_64 builds of MRI Ruby with --enable-shared
-
-  i386/i686 support for all the above.
 
 CREDITS
 =======
