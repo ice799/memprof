@@ -1,11 +1,3 @@
-if RUBY_PLATFORM =~ /darwin/
-  STDERR.puts "\n\n"
-  STDERR.puts "***************************************************************************************"
-  STDERR.puts "**************************** osx is not supported (yet) =( ****************************"
-  STDERR.puts "***************************************************************************************"
-  exit(1)
-end
-
 if RUBY_VERSION >= "1.9"
   STDERR.puts "\n\n"
   STDERR.puts "***************************************************************************************"
@@ -142,9 +134,11 @@ if RUBY_PLATFORM =~ /linux/
   add_define 'HAVE_DWARF'
 end
 
-if have_header('mach-o/dyld')
+if have_header('mach-o/dyld.h')
   is_macho = true
   add_define 'HAVE_MACH'
+  # XXX How to determine this properly? RUBY_PLATFORM reports "i686-darwin10.2.0" on Snow Leopard.
+  add_define "_ARCH_x86_64_"
 end
 
 arch = RUBY_PLATFORM[/(.*)-linux/,1]
