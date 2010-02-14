@@ -305,8 +305,10 @@ each_hash_entry(st_data_t key, st_data_t record, st_data_t arg)
   VALUE k = (VALUE)key;
   VALUE v = (VALUE)record;
 
+  yajl_gen_array_open(gen);
   yajl_gen_value(gen, k);
   yajl_gen_value(gen, v);
+  yajl_gen_array_close(gen);
 
   return ST_CONTINUE;
 }
@@ -632,9 +634,11 @@ obj_dump(VALUE obj, yajl_gen gen)
 
       if (hash->tbl && hash->tbl->num_entries) {
         yajl_gen_cstr(gen, "data");
-        yajl_gen_map_open(gen);
+        //yajl_gen_map_open(gen);
+        yajl_gen_array_open(gen);
         st_foreach(hash->tbl, each_hash_entry, (st_data_t)gen);
-        yajl_gen_map_close(gen);
+        yajl_gen_array_close(gen);
+        //yajl_gen_map_close(gen);
       }
       break;
 
