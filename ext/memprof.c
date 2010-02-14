@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include <err.h>
 #include <fcntl.h>
 #include <stddef.h>
@@ -17,6 +16,10 @@
 
 #include "arch.h"
 #include "bin_api.h"
+
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 
 size_t pagesize;
 
