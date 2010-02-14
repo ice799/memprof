@@ -285,7 +285,7 @@ yajl_gen_status
 yajl_gen_value(yajl_gen gen, VALUE obj)
 {
   if (FIXNUM_P(obj))
-    return yajl_gen_integer(gen, FIX2INT(obj));
+    return yajl_gen_integer(gen, NUM2LONG(obj));
   else if (NIL_P(obj) || obj == Qundef)
     return yajl_gen_null(gen);
   else if (obj == Qtrue)
