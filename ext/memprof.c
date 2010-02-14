@@ -319,8 +319,9 @@ each_ivar(st_data_t key, st_data_t record, st_data_t arg)
   yajl_gen gen = (yajl_gen)arg;
   ID id = (ID)key;
   VALUE val = (VALUE)record;
+  const char *name = rb_id2name(id);
 
-  yajl_gen_cstr(gen, rb_id2name(id));
+  yajl_gen_cstr(gen, name ? name : "(none)");
   yajl_gen_value(gen, val);
 
   return ST_CONTINUE;
