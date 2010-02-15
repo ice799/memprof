@@ -1,3 +1,9 @@
+#include <ruby.h>
+
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <err.h>
 #include <fcntl.h>
 #include <stddef.h>
@@ -10,16 +16,12 @@
 #include <err.h>
 
 #include <st.h>
-#include <ruby.h>
 #include <intern.h>
 #include <node.h>
 
 #include "arch.h"
 #include "bin_api.h"
 
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
 
 size_t pagesize;
 
@@ -854,10 +856,8 @@ static void
 insert_tramp(char *trampee, void *tramp)
 {
   void *trampee_addr = bin_find_symbol(trampee, NULL);
-  void *plt_addr = NULL;
   int entry = tramp_size;
   int inline_ent = inline_tramp_size;
-  void *info;
 
   if (trampee_addr == NULL) {
     if (strcmp("add_freelist", trampee) == 0) {
