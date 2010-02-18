@@ -169,9 +169,13 @@ bin_update_image(int entry, char *trampee, struct tramp_st2_entry *tramp)
     unsigned char *byte = ruby_info->text_segment;
     trampee_addr = bin_find_symbol(trampee, NULL);
     size_t count = 0;
+    int num = 0;
 
     for(; count < ruby_info->text_segment_len; byte++, count++) {
-      arch_insert_st1_tramp(byte, trampee_addr, tramp);
+      if (arch_insert_st1_tramp(byte, trampee_addr, tramp)) {
+        // printf("tramped %x\n", byte);
+        num++;
+      }
     }
   } else {
     trampee_addr = find_got_addr(trampee, NULL);
