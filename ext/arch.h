@@ -15,7 +15,7 @@
 void *
 arch_get_st2_tramp(size_t *size);
 
-void
+int
 arch_insert_st1_tramp(void *start, void *trampee, void *tramp);
 
 /*
