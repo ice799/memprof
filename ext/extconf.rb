@@ -30,7 +30,7 @@ end
 ###
 # yajl
 
-yajl = File.basename('yajl-1.0.8.tar.gz')
+yajl = File.basename('yajl-1.0.9.tar.gz')
 dir = File.basename(yajl, '.tar.gz')
 
 unless File.exists?("#{CWD}/dst/lib/libyajl_ext.a")
