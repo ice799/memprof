@@ -669,7 +669,11 @@ void
 json_print(void *ctx, const char * str, unsigned int len)
 {
   FILE *out = (FILE *)ctx;
-  fwrite(str, sizeof(char), len, out ? out : stdout);
+  size_t written = 0;
+  while(1) {
+    written += fwrite(str + written, sizeof(char), len - written, out ? out : stdout);
+    if (written == len) break;
+  }
 }
 
 static VALUE
@@ -752,7 +756,7 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
         yajl_gen_clear(gen);
         yajl_gen_free(gen);
         gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)out);
-        fprintf(out ? out : stdout, "\n");
+        while(fputc('\n', out ? out : stdout) == EOF);
       }
 
       p += sizeof_RVALUE;
