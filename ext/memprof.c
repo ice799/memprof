@@ -56,7 +56,7 @@ newobj_tramp()
   VALUE ret = rb_newobj();
   struct obj_track *tracker = NULL;
 
-  if (track_objs) {
+  if (track_objs && objs) {
     tracker = malloc(sizeof(*tracker));
 
     if (tracker) {
@@ -72,7 +72,9 @@ newobj_tramp()
       }
 
       tracker->obj = ret;
+      rb_gc_disable();
       st_insert(objs, (st_data_t)ret, (st_data_t)tracker);
+      rb_gc_enable();
     } else {
       fprintf(stderr, "Warning, unable to allocate a tracker. You are running dangerously low on RAM!\n");
     }
@@ -85,7 +87,7 @@ static void
 freelist_tramp(unsigned long rval)
 {
   struct obj_track *tracker = NULL;
-  if (track_objs) {
+  if (track_objs && objs) {
     st_delete(objs, (st_data_t *) &rval, (st_data_t *) &tracker);
     if (tracker) {
       free(tracker->source);
