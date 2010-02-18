@@ -384,7 +384,7 @@ obj_dump(VALUE obj, yajl_gen gen)
   int type;
   yajl_gen_map_open(gen);
 
-  yajl_gen_cstr(gen, "address");
+  yajl_gen_cstr(gen, "_id");
   yajl_gen_value(gen, obj);
 
   struct obj_track *tracker = NULL;
@@ -733,12 +733,12 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
       rb_raise(rb_eArgError, "unable to open output file");
   }
 
-  yajl_gen_config conf = { .beautify = 1, .indentString = "  " };
+  yajl_gen_config conf = { .beautify = 0, .indentString = "  " };
   yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)out);
 
   track_objs = 0;
 
-  yajl_gen_array_open(gen);
+  //yajl_gen_array_open(gen);
 
   for (i=0; i < heaps_used; i++) {
     p = *(char**)(heaps + (i * sizeof_heaps_slot) + offset_slot);
@@ -746,14 +746,21 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
     pend = p + (sizeof_RVALUE * limit);
 
     while (p < pend) {
-      if (RBASIC(p)->flags)
+      if (RBASIC(p)->flags) {
         obj_dump((VALUE)p, gen);
+        // XXX ugh
+        yajl_gen_clear(gen);
+        yajl_gen_free(gen);
+        gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)out);
+        fprintf(out ? out : stdout, "\n");
+      }
 
       p += sizeof_RVALUE;
     }
   }
 
-  yajl_gen_array_close(gen);
+  //yajl_gen_array_close(gen);
+  yajl_gen_clear(gen);
   yajl_gen_free(gen);
 
   if (out)
