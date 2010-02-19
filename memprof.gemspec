@@ -22,7 +22,7 @@ spec = Gem::Specification.new do |s|
     ext/memprof.c
     ext/src/libdwarf-20091118.tar.gz
     ext/src/libelf-0.8.13.tar.gz
-    ext/src/yajl-1.0.8.tar.gz
+    ext/src/yajl-1.0.9.tar.gz
     ext/x86_64.c
     ext/x86_64.h
     ext/x86_gen.h
