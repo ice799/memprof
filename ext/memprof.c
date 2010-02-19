@@ -884,12 +884,8 @@ Init_memprof()
   bin_init();
   create_tramp_table();
 
-#if defined(HAVE_MACH)
-  insert_tramp("_rb_newobj", newobj_tramp);
-#elif defined(HAVE_ELF)
   insert_tramp("rb_newobj", newobj_tramp);
   insert_tramp("add_freelist", freelist_tramp);
-#endif
 
   rb_classname = bin_find_symbol("classname", 0);
 
