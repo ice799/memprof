@@ -1,4 +1,9 @@
+#include <ruby.h>
+
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
+
 #include <err.h>
 #include <fcntl.h>
 #include <stddef.h>
@@ -11,12 +16,12 @@
 #include <err.h>
 
 #include <st.h>
-#include <ruby.h>
 #include <intern.h>
 #include <node.h>
 
 #include "arch.h"
 #include "bin_api.h"
+
 
 size_t pagesize;
 
@@ -51,7 +56,7 @@ newobj_tramp()
   VALUE ret = rb_newobj();
   struct obj_track *tracker = NULL;
 
-  if (track_objs) {
+  if (track_objs && objs) {
     tracker = malloc(sizeof(*tracker));
 
     if (tracker) {
@@ -67,7 +72,9 @@ newobj_tramp()
       }
 
       tracker->obj = ret;
+      rb_gc_disable();
       st_insert(objs, (st_data_t)ret, (st_data_t)tracker);
+      rb_gc_enable();
     } else {
       fprintf(stderr, "Warning, unable to allocate a tracker. You are running dangerously low on RAM!\n");
     }
@@ -80,7 +87,7 @@ static void
 freelist_tramp(unsigned long rval)
 {
   struct obj_track *tracker = NULL;
-  if (track_objs) {
+  if (track_objs && objs) {
     st_delete(objs, (st_data_t *) &rval, (st_data_t *) &tracker);
     if (tracker) {
       free(tracker->source);
@@ -285,7 +292,7 @@ yajl_gen_status
 yajl_gen_value(yajl_gen gen, VALUE obj)
 {
   if (FIXNUM_P(obj))
-    return yajl_gen_integer(gen, FIX2INT(obj));
+    return yajl_gen_integer(gen, NUM2LONG(obj));
   else if (NIL_P(obj) || obj == Qundef)
     return yajl_gen_null(gen);
   else if (obj == Qtrue)
@@ -305,8 +312,10 @@ each_hash_entry(st_data_t key, st_data_t record, st_data_t arg)
   VALUE k = (VALUE)key;
   VALUE v = (VALUE)record;
 
+  yajl_gen_array_open(gen);
   yajl_gen_value(gen, k);
   yajl_gen_value(gen, v);
+  yajl_gen_array_close(gen);
 
   return ST_CONTINUE;
 }
@@ -317,8 +326,9 @@ each_ivar(st_data_t key, st_data_t record, st_data_t arg)
   yajl_gen gen = (yajl_gen)arg;
   ID id = (ID)key;
   VALUE val = (VALUE)record;
+  const char *name = rb_id2name(id);
 
-  yajl_gen_cstr(gen, rb_id2name(id));
+  yajl_gen_cstr(gen, name ? name : "(none)");
   yajl_gen_value(gen, val);
 
   return ST_CONTINUE;
@@ -376,7 +386,7 @@ obj_dump(VALUE obj, yajl_gen gen)
   int type;
   yajl_gen_map_open(gen);
 
-  yajl_gen_cstr(gen, "address");
+  yajl_gen_cstr(gen, "_id");
   yajl_gen_value(gen, obj);
 
   struct obj_track *tracker = NULL;
@@ -632,9 +642,11 @@ obj_dump(VALUE obj, yajl_gen gen)
 
       if (hash->tbl && hash->tbl->num_entries) {
         yajl_gen_cstr(gen, "data");
-        yajl_gen_map_open(gen);
+        //yajl_gen_map_open(gen);
+        yajl_gen_array_open(gen);
         st_foreach(hash->tbl, each_hash_entry, (st_data_t)gen);
-        yajl_gen_map_close(gen);
+        yajl_gen_array_close(gen);
+        //yajl_gen_map_close(gen);
       }
       break;
 
@@ -659,7 +671,11 @@ void
 json_print(void *ctx, const char * str, unsigned int len)
 {
   FILE *out = (FILE *)ctx;
-  fwrite(str, sizeof(char), len, out ? out : stdout);
+  size_t written = 0;
+  while(1) {
+    written += fwrite(str + written, sizeof(char), len - written, out ? out : stdout);
+    if (written == len) break;
+  }
 }
 
 static VALUE
@@ -723,12 +739,12 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
       rb_raise(rb_eArgError, "unable to open output file");
   }
 
-  yajl_gen_config conf = { .beautify = 1, .indentString = "  " };
+  yajl_gen_config conf = { .beautify = 0, .indentString = "  " };
   yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)out);
 
   track_objs = 0;
 
-  yajl_gen_array_open(gen);
+  //yajl_gen_array_open(gen);
 
   for (i=0; i < heaps_used; i++) {
     p = *(char**)(heaps + (i * sizeof_heaps_slot) + offset_slot);
@@ -736,14 +752,21 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
     pend = p + (sizeof_RVALUE * limit);
 
     while (p < pend) {
-      if (RBASIC(p)->flags)
+      if (RBASIC(p)->flags) {
         obj_dump((VALUE)p, gen);
+        // XXX ugh
+        yajl_gen_clear(gen);
+        yajl_gen_free(gen);
+        gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)out);
+        while(fputc('\n', out ? out : stdout) == EOF);
+      }
 
       p += sizeof_RVALUE;
     }
   }
 
-  yajl_gen_array_close(gen);
+  //yajl_gen_array_close(gen);
+  yajl_gen_clear(gen);
   yajl_gen_free(gen);
 
   if (out)
@@ -846,10 +869,8 @@ static void
 insert_tramp(char *trampee, void *tramp)
 {
   void *trampee_addr = bin_find_symbol(trampee, NULL);
-  void *plt_addr = NULL;
   int entry = tramp_size;
   int inline_ent = inline_tramp_size;
-  void *info;
 
   if (trampee_addr == NULL) {
     if (strcmp("add_freelist", trampee) == 0) {

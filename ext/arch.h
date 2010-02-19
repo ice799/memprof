@@ -15,7 +15,7 @@
 void *
 arch_get_st2_tramp(size_t *size);
 
-void
+int
 arch_insert_st1_tramp(void *start, void *trampee, void *tramp);
 
 /*
@@ -26,5 +26,8 @@ arch_get_inline_st2_tramp(size_t *size);
 
 int
 arch_insert_inline_st2_tramp(void *addr, void *marker, void *trampoline, void *table_entry);
+
+void
+arch_overwrite_got(void *plt, void *tramp);
 
 #endif

@@ -45,7 +45,7 @@ copy_instructions(void *to, void *from, size_t count)
   mprotect(start, len, PROT_READ | PROT_EXEC); \
 } while (0)
 
-void
+int
 arch_insert_st1_tramp(void *start, void *trampee, void *tramp)
 {
   int32_t fn_addr = 0;
@@ -58,10 +58,11 @@ arch_insert_st1_tramp(void *start, void *trampee, void *tramp)
       WRITE_INSTRUCTIONS(aligned_addr,
                          ((void *)&(check->displacement) - aligned_addr) + 10,
                          (check->displacement = (tramp - (void *)(check + 1))));
+      return 1;
     }
   }
 
-  return;
+  return 0;
 }
 
 static void *
