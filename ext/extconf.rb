@@ -44,7 +44,11 @@ unless File.exists?("#{CWD}/dst/lib/libyajl_ext.a")
       sys("#{Config::CONFIG['bindir']}/#{Config::CONFIG['ruby_install_name']} extconf.rb")
 
       sys("make")
-      sys("ar rv libyajl_ext.a #{Dir['*.o'].join(' ')}")
+      if RUBY_PLATFORM =~ /darwin/
+        sys("libtool -static -o libyajl_ext.a #{Dir['*.o'].join(' ')}")
+      else
+        sys("ar rv libyajl_ext.a #{Dir['*.o'].join(' ')}")
+      end
 
       FileUtils.mkdir_p "#{CWD}/dst/lib"
       FileUtils.cp 'libyajl_ext.a', "#{CWD}/dst/lib"
