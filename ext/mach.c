@@ -73,6 +73,8 @@ bin_update_image(int entry, char *trampee, struct tramp_st2_entry *tramp)
   // Go through all the mach objects that are loaded into this process
   for (i=0; i < header_count; i++) {
     const struct mach_header *current_hdr = _dyld_get_image_header(i);
+    if ((void*)current_hdr == &_mh_bundle_header)
+      continue;
 
     // Modify any callsites residing inside the text segment
     set_text_segment(current_hdr, "__text");
