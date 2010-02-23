@@ -142,8 +142,11 @@ if have_header('mach-o/dyld.h')
 end
 
 arch = RUBY_PLATFORM[/(.*)-linux/,1]
-if arch == 'universal'
+case arch
+when "universal"
   arch = 'x86_64'
+when 'i486'
+  arch = 'i386'
 end
 add_define "_ARCH_#{arch}_"
 
