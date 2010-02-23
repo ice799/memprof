@@ -83,10 +83,17 @@ newobj_tramp()
   return ret;
 }
 
+static void (*rb_add_freelist)(VALUE);
+
 static void
 freelist_tramp(unsigned long rval)
 {
   struct obj_track *tracker = NULL;
+
+  if (rb_add_freelist) {
+    rb_add_freelist(rval);
+  }
+
   if (track_objs && objs) {
     st_delete(objs, (st_data_t *) &rval, (st_data_t *) &tracker);
     if (tracker) {
@@ -881,6 +888,10 @@ insert_tramp(char *trampee, void *tramp)
       return;
     }
   } else {
+    if (strcmp("add_freelist", trampee) == 0) {
+      rb_add_freelist = trampee_addr;
+    }
+
     tramp_table[tramp_size].addr = tramp;
     bin_update_image(entry, trampee, &tramp_table[tramp_size]);
     tramp_size++;
@@ -904,6 +915,7 @@ Init_memprof()
   objs = st_init_numtable();
   bin_init();
   create_tramp_table();
+  rb_add_freelist = NULL;
 
   insert_tramp("rb_newobj", newobj_tramp);
   insert_tramp("add_freelist", freelist_tramp);

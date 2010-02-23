@@ -82,7 +82,9 @@ bin_update_image(int entry, char *trampee, struct tramp_st2_entry *tramp)
     size_t count = 0;
 
     for(; count < text_segment_len; byte++, count++) {
-      arch_insert_st1_tramp(byte, trampee_addr, tramp);
+      if (arch_insert_st1_tramp(byte, trampee_addr, tramp)) {
+        // printf("tramped %p for %s\n", byte, trampee);
+      }
     }
 
   //  int lc_count = current_hdr->ncmds;
