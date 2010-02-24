@@ -143,6 +143,41 @@ if have_header('mach-o/dyld.h')
   add_define 'HAVE_MACH'
   # XXX How to determine this properly? RUBY_PLATFORM reports "i686-darwin10.2.0" on Snow Leopard.
   add_define "_ARCH_x86_64_"
+
+  expressions = [
+    [:sizeof__RVALUE, "sizeof(RVALUE)"],
+    [:sizeof__heaps_slot, "sizeof(struct heaps_slot)"],
+    [:offset__heaps_slot__slot, "(int)&(((struct heaps_slot *)0)->slot)"],
+    [:offset__heaps_slot__limit, "(int)&(((struct heaps_slot *)0)->limit)"]
+    # "&add_freelist",
+    # "&rb_newobj",
+    # "&freelist",
+    # "&heaps",
+    # "&heaps_used"
+  ]
+
+  pid = fork{sleep}
+  output = IO.popen('gdb --interpreter=mi --quiet', 'w+') do |io|
+    io.puts "attach #{pid}"
+    expressions.each do |name, expr|
+      io.puts "-data-evaluate-expression #{expr.dump}"
+    end
+    io.puts 'quit'
+    io.puts 'y'
+    io.close_write
+    io.read
+  end
+  Process.kill 9, pid
+
+  attach, *results = output.grep(/^\^/).map{ |l| l.strip }
+  if results.find{ |l| l =~ /^\^error/ }
+    raise "Unsupported platform: #{results.inspect}"
+  end
+
+  values = results.map{ |l| l[/value="(.+?)"/, 1] }
+  vars = Hash[ *expressions.map{|n,e| n }.zip(values).flatten(1) ].each do |name, val|
+    add_define "#{name}=#{val}"
+  end
 end
 
 arch = RUBY_PLATFORM[/(.*)-linux/,1]

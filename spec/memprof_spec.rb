@@ -76,11 +76,27 @@ describe Memprof do
     Memprof.stop
     Memprof.dump_all(filename)
 
-    File.open(filename, 'r').each_line do |line|
-      if line =~ /"data": "dump out the entire heap"/
-        break :found
-      end
-    end.should == :found
+    obj = File.open(filename, 'r').each_line.find do |line|
+      line =~ /"dump out the entire heap"/
+    end
+
+    obj.should =~ /"length":24/
+    obj.should =~ /"type":"string"/
+    obj.should =~ /"_id":"0x(\w+?)"/
+  end
+
+  should 'dump out the entire heap with tracking info' do
+    Memprof.start
+    @str = "some random" + " string"
+    Memprof.dump_all(filename)
+
+    obj = File.open(filename, 'r').each_line.find do |line|
+      line =~ /"some random string"/
+    end
+
+    obj.should =~ /"type":"string"/
+    obj.should =~ /"file":".+?memprof_spec.rb"/
+    obj.should =~ /"line":#{__LINE__-9}/
   end
 end
 

@@ -725,16 +725,26 @@ memprof_dump(int argc, VALUE *argv, VALUE self)
 static VALUE
 memprof_dump_all(int argc, VALUE *argv, VALUE self)
 {
-  int sizeof_RVALUE = bin_type_size("RVALUE");
   char *heaps = *(char**)bin_find_symbol("heaps",0);
   int heaps_used = *(int*)bin_find_symbol("heaps_used",0);
-  int sizeof_heaps_slot = bin_type_size("heaps_slot");
-  int offset_limit = bin_type_member_offset("heaps_slot", "limit");
-  int offset_slot = bin_type_member_offset("heaps_slot", "slot");
+
+#ifndef sizeof__RVALUE
+  int sizeof__RVALUE = bin_type_size("RVALUE");
+#endif
+#ifndef sizeof__heaps_slot
+  int sizeof__heaps_slot = bin_type_size("heaps_slot");
+#endif
+#ifndef offset__heaps_slot__limit
+  int offset__heaps_slot__limit = bin_type_member_offset("heaps_slot", "limit");
+#endif
+#ifndef offset__heaps_slot__slot
+  int offset__heaps_slot__slot = bin_type_member_offset("heaps_slot", "slot");
+#endif
+
   char *p, *pend;
   int i, limit;
 
-  if (sizeof_RVALUE < 0 || sizeof_heaps_slot < 0)
+  if (sizeof__RVALUE < 0 || sizeof__heaps_slot < 0)
     rb_raise(eUnsupported, "could not find internal heap");
 
   VALUE str;
@@ -756,9 +766,9 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   //yajl_gen_array_open(gen);
 
   for (i=0; i < heaps_used; i++) {
-    p = *(char**)(heaps + (i * sizeof_heaps_slot) + offset_slot);
-    limit = *(int*)(heaps + (i * sizeof_heaps_slot) + offset_limit);
-    pend = p + (sizeof_RVALUE * limit);
+    p = *(char**)(heaps + (i * sizeof__heaps_slot) + offset__heaps_slot__slot);
+    limit = *(int*)(heaps + (i * sizeof__heaps_slot) + offset__heaps_slot__limit);
+    pend = p + (sizeof__RVALUE * limit);
 
     while (p < pend) {
       if (RBASIC(p)->flags) {
@@ -770,7 +780,7 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
         while(fputc('\n', out ? out : stdout) == EOF);
       }
 
-      p += sizeof_RVALUE;
+      p += sizeof__RVALUE;
     }
   }
 
