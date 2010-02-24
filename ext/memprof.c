@@ -397,9 +397,11 @@ obj_dump(VALUE obj, yajl_gen gen)
   yajl_gen_value(gen, obj);
 
   struct obj_track *tracker = NULL;
-  if (st_lookup(objs, (st_data_t)obj, (st_data_t *)&tracker)) {
-    yajl_gen_cstr(gen, "source");
-    yajl_gen_format(gen, "%s:%d", tracker->source, tracker->line);
+  if (st_lookup(objs, (st_data_t)obj, (st_data_t *)&tracker) && BUILTIN_TYPE(obj) != T_NODE) {
+    yajl_gen_cstr(gen, "file");
+    yajl_gen_cstr(gen, tracker->source);
+    yajl_gen_cstr(gen, "line");
+    yajl_gen_integer(gen, tracker->line);
   }
 
   yajl_gen_cstr(gen, "type");

@@ -61,7 +61,8 @@ describe Memprof do
     1.23+1
     Memprof.dump(filename)
 
-    filedata.should =~ /"source": "#{__FILE__}:#{__LINE__-3}"/
+    filedata.should =~ /"file": "#{__FILE__}"/
+    filedata.should =~ /"line": #{__LINE__-4}/
     filedata.should =~ /"type": "float"/
     filedata.should =~ /"data": 2\.23/
   end
