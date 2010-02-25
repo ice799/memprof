@@ -835,13 +835,15 @@ hook_freelist(int entry)
 
   freelist_inliners[0] = bin_find_symbol("gc_sweep", &sizes[0]);
   /* sometimes gc_sweep gets inlined in garbage_collect */
-  if (!freelist_inliners[0]) {
+  /* on REE, it gets inlined into garbage_collect_0 */
+  if (!freelist_inliners[0])
+    freelist_inliners[0] = bin_find_symbol("garbage_collect_0", &sizes[0]);
+  if (!freelist_inliners[0])
     freelist_inliners[0] = bin_find_symbol("garbage_collect", &sizes[0]);
-    if (!freelist_inliners[0]) {
-      /* couldn't find garbage_collect either. */
-      fprintf(stderr, "Couldn't find gc_sweep or garbage_collect!\n");
-      return;
-    }
+  if (!freelist_inliners[0]) {
+    /* couldn't find anything containing gc_sweep. */
+    fprintf(stderr, "Couldn't find gc_sweep or garbage_collect!\n");
+    return;
   }
 
   freelist_inliners[1] = bin_find_symbol("finalize_list", &sizes[1]);
