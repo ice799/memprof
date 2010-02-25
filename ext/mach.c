@@ -18,102 +18,114 @@
 #include <mach-o/ldsyms.h>
 #include <mach-o/nlist.h>
 
-void *text_segment;
-size_t text_segment_len;
+// The jmp instructions in the dyld stub table are 6 bytes,
+// 2 bytes for the instruction and 4 bytes for the offset operand
+//
+// This jmp does not jump to the offset operand, but instead
+// looks up an absolute address stored at the offset and jumps to that.
+// Offset is the offset from the address of the _next_ instruction sequence.
+//
+// We need to deference the address at this offset to find the real
+// target of the dyld stub entry.
 
-static void
-set_text_segment(const struct mach_header *header, const char *sectname)
-{
-  text_segment = getsectdatafromheader_64((const struct mach_header_64*)header, "__TEXT", sectname, (uint64_t*)&text_segment_len);
-  if (!text_segment)
-    errx(EX_SOFTWARE, "Failed to locate the %s section", sectname);
-}
+struct dyld_stub_entry {
+  unsigned char jmp[2];
+  uint32_t offset;
+} __attribute((__packed__));
 
-static void
-update_dyld_stubs(int entry, void *trampee_addr, struct tramp_st2_entry *tramp)
-{
- char *byte = text_segment;
- size_t count = 0;
+static void*
+get_dyld_stub_target(struct dyld_stub_entry *entry) {
+  // If the instructions match up, then dereference the address at the offset
+  if (entry->jmp[0] == 0xff && entry->jmp[1] == 0x25)
+    return *((void**)((void*)(entry + 1) + entry->offset));
 
- for(; count < text_segment_len; count++) {
-   if (*byte == '\xff') {
-     int off = *(int *)(byte+2);
-     if (trampee_addr == *((void**)(byte + 6 + off))) {
-       *((void**)(byte + 6 + off)) = tramp->addr;
-     }
-   }
-   byte++;
- }
-}
-
-void *
-bin_allocate_page()
-{
-  void *ret = NULL;
-  size_t i = 0;
-
-  for (i = pagesize; i < INT_MAX - pagesize; i += pagesize) {
-    ret = mmap((void*)(NULL + i), pagesize, PROT_WRITE|PROT_READ|PROT_EXEC,
-               MAP_ANON|MAP_PRIVATE, -1, 0);
-
-    if (ret != MAP_FAILED) {
-      memset(ret, 0x90, pagesize);
-      return ret;
-    }
-  }
   return NULL;
 }
 
-void
-bin_update_image(int entry, char *trampee, struct tramp_st2_entry *tramp)
+set_dyld_stub_target(struct dyld_stub_entry *entry, void *addr) {
+  *((void**)((void*)(entry + 1) + entry->offset)) = addr;
+}
+
+static void
+update_dyld_stub_table(void *table, uint64_t len, void *trampee_addr, struct tramp_st2_entry *tramp)
 {
-  int i, j, k;
-  int header_count = _dyld_image_count();
-  void *trampee_addr = bin_find_symbol(trampee, NULL);
+  struct dyld_stub_entry *entry = (struct dyld_stub_entry*) table;
+  void *max_addr = table + len;
 
-  // Go through all the mach objects that are loaded into this process
-  for (i=0; i < header_count; i++) {
-    const struct mach_header *current_hdr = _dyld_get_image_header(i);
-    if ((void*)current_hdr == &_mh_bundle_header)
-      continue;
+  for(; (void*)entry < max_addr; entry++) {
+    void *target = get_dyld_stub_target(entry);
+    if (trampee_addr == target) {
+      set_dyld_stub_target(entry, tramp->addr);
+    }
+  }
+}
 
-    // Modify any callsites residing inside the text segment
-    set_text_segment(current_hdr, "__text");
-    text_segment += _dyld_get_image_vmaddr_slide(i);
 
-    unsigned char *byte = text_segment;
+// This function tells us if the passed stub table address
+// is something that we should try to update (by looking at it's filename)
+
+static int
+should_update_stub_table(void *addr) {
+  // Only try to update dyld stub entries in files that match "libruby.dylib" or "*.bundle" (other C gems)
+  Dl_info info;
+
+  if (dladdr(addr, &info)) {
+    size_t len = strlen(info.dli_fname);
+
+    if (len >= 6) {
+      const char *possible_bundle = (info.dli_fname + len - 6);
+      if (strcmp(possible_bundle, "bundle") == 0)
+        return 1;
+    }
+
+    if (len >= 13) {
+      const char *possible_libruby = (info.dli_fname + len - 13);
+      if (strcmp(possible_libruby, "libruby.dylib") == 0)
+        return 1;
+    }
+  }
+  return 0;
+}
+
+static void
+update_mach_section(const struct mach_header *header, const struct section_64 *sect, intptr_t slide, void *trampee_addr, struct tramp_st2_entry *tramp) {
+  uint64_t len = 0;
+  void *section = getsectdatafromheader_64((const struct mach_header_64*)header, "__TEXT", sect->sectname, &len) + slide;
+
+  if (strncmp(sect->sectname, "__symbol_stub", 13) == 0) {
+    if (should_update_stub_table(section))
+      update_dyld_stub_table(section, sect->size, trampee_addr, tramp);
+  }
+
+  if (strcmp(sect->sectname, "__text") == 0) {
     size_t count = 0;
-
-    for(; count < text_segment_len; byte++, count++) {
-      if (arch_insert_st1_tramp(byte, trampee_addr, tramp)) {
+    for(; count < len; section++, count++) {
+      if (arch_insert_st1_tramp(section, trampee_addr, tramp)) {
         // printf("tramped %p for %s\n", byte, trampee);
       }
     }
+  }
+}
 
-   int lc_count = current_hdr->ncmds;
+static void
+update_bin_for_mach_header(const struct mach_header *header, intptr_t slide, void *trampee_addr, struct tramp_st2_entry *tramp) {
+  int i, j;
+  int lc_count = header->ncmds;
 
-   // this as a char* because we need to step it forward by an arbitrary number of bytes
-   const char *lc = ((const char*) current_hdr) + sizeof(struct mach_header_64);
+  // this as a char* because we need to step it forward by an arbitrary number of bytes
+  const char *lc = ((const char*) header) + sizeof(struct mach_header_64);
 
-   // Check all the load commands in the object to see if they are segment commands
-   for (j = 0; j < lc_count; j++) {
-     if (((struct load_command*)lc)->cmd == LC_SEGMENT_64) {
-       const struct segment_command_64 *seg = (const struct segment_command_64 *) lc;
-       const struct section_64 * sect = (const struct section_64*)(lc + sizeof(struct segment_command_64));
-       int section_count = (seg->cmdsize - sizeof(struct segment_command_64)) / sizeof(struct section_64);
+  // Check all the load commands in the object to see if they are segment commands
+  for (i = 0; i < lc_count; i++, lc += ((struct load_command*)lc)->cmdsize) {
+    if (((struct load_command*)lc)->cmd == LC_SEGMENT_64) {
+      const struct segment_command_64 *seg = (const struct segment_command_64 *) lc;
+      const struct section_64 * sect = (const struct section_64*)(lc + sizeof(struct segment_command_64));
+      int section_count = (seg->cmdsize - sizeof(struct segment_command_64)) / sizeof(struct section_64);
 
-       // Search the segment for a section containing dyld stub functions
-       for (k=0; k < section_count; k++) {
-         if (strncmp(sect->sectname, "__symbol_stub", 13) == 0) {
-           set_text_segment((struct mach_header*)current_hdr, sect->sectname);
-           text_segment += _dyld_get_image_vmaddr_slide(i);
-           update_dyld_stubs(entry, trampee_addr, tramp);
-         }
-         sect++;
-       }
-     }
-     lc += ((struct load_command*)lc)->cmdsize;
-   }
+      for (j=0; j < section_count; j++, sect++) {
+        update_mach_section(header, sect, slide, trampee_addr, tramp);
+      }
+    }
   }
 }
 
@@ -282,6 +294,41 @@ bin_find_symbol(char *symbol, size_t *size) {
   free(nlist_table);
   free(file);
   return ptr;
+}
+
+void
+bin_update_image(int entry, char *trampee, struct tramp_st2_entry *tramp)
+{
+  int i;
+  int header_count = _dyld_image_count();
+  void *trampee_addr = bin_find_symbol(trampee, NULL);
+
+  // Go through all the mach objects that are loaded into this process
+  for (i=0; i < header_count; i++) {
+    const struct mach_header *current_hdr = _dyld_get_image_header(i);
+    if ((void*)current_hdr == &_mh_bundle_header)
+      continue;
+
+    update_bin_for_mach_header(current_hdr, _dyld_get_image_vmaddr_slide(i), trampee_addr, tramp);
+  }
+}
+
+void *
+bin_allocate_page()
+{
+  void *ret = NULL;
+  size_t i = 0;
+
+  for (i = pagesize; i < INT_MAX - pagesize; i += pagesize) {
+    ret = mmap((void*)(NULL + i), pagesize, PROT_WRITE|PROT_READ|PROT_EXEC,
+               MAP_ANON|MAP_PRIVATE, -1, 0);
+
+    if (ret != MAP_FAILED) {
+      memset(ret, 0x90, pagesize);
+      return ret;
+    }
+  }
+  return NULL;
 }
 
 int
