@@ -33,7 +33,7 @@ struct dyld_stub_entry {
   uint32_t offset;
 } __attribute((__packed__));
 
-static void*
+static inline void*
 get_dyld_stub_target(struct dyld_stub_entry *entry) {
   // If the instructions match up, then dereference the address at the offset
   if (entry->jmp[0] == 0xff && entry->jmp[1] == 0x25)
@@ -42,6 +42,7 @@ get_dyld_stub_target(struct dyld_stub_entry *entry) {
   return NULL;
 }
 
+static inline void
 set_dyld_stub_target(struct dyld_stub_entry *entry, void *addr) {
   *((void**)((void*)(entry + 1) + entry->offset)) = addr;
 }
@@ -64,7 +65,7 @@ update_dyld_stub_table(void *table, uint64_t len, void *trampee_addr, struct tra
 // This function tells us if the passed stub table address
 // is something that we should try to update (by looking at it's filename)
 
-static int
+static inline int
 should_update_stub_table(void *addr) {
   // Only try to update dyld stub entries in files that match "libruby.dylib" or "*.bundle" (other C gems)
   Dl_info info;
