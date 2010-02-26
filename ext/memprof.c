@@ -14,6 +14,7 @@
 #include <sysexits.h>
 #include <sys/mman.h>
 #include <err.h>
+#include <assert.h>
 
 #include <st.h>
 #include <intern.h>
@@ -832,6 +833,7 @@ hook_freelist(int entry)
   void *freelist_inliners[FREELIST_INLINES];
   void *freelist = NULL;
   unsigned char *byte = NULL;
+  int tramps_completed = 0;
 
   freelist_inliners[0] = bin_find_symbol("gc_sweep", &sizes[0]);
   /* sometimes gc_sweep gets inlined in garbage_collect */
@@ -874,6 +876,15 @@ hook_freelist(int entry)
       /* insert occurred, so increment internal counters for the tramp table */
       entry++;
       inline_tramp_size++;
+
+      /* add_freelist() only gets inlined *ONCE* into any of the 3 functions that we're scanning, */
+      /* so move on to the next 'inliner' when after we tramp the first instruction we find. */
+      /* REE's gc_sweep has 2 calls, but this gets optimized into a single inlining and a jmp to it */
+      /* older patchlevels of 1.8.7 don't have an add_freelist(), but the instruction should be the same */
+      tramps_completed++;
+      i++;
+      byte = freelist_inliners[i];
+      continue;
     }
 
     /* if we've looked at all the bytes in this function... */
@@ -884,6 +895,8 @@ hook_freelist(int entry)
     }
     byte++;
   }
+
+  assert(tramps_completed == 3);
 }
 
 static void
