@@ -2,3 +2,5 @@
 *.so
 *.bundle
 Makefile
+*.dSYM
+*.log
