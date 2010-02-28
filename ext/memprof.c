@@ -807,10 +807,8 @@ create_tramp_table()
   void *ent = arch_get_st2_tramp(&tramp_sz);
   void *inline_ent = arch_get_inline_st2_tramp(&inline_tramp_sz);
 
-  if ((region = bin_allocate_page()) == MAP_FAILED) {
-    fprintf(stderr, "Failed to allocate memory for stage 1 trampolines.\n");
-    return;
-  }
+  if ((region = bin_allocate_page()) == MAP_FAILED)
+    errx(EX_SOFTWARE, "Failed to allocate memory for stage 1 trampolines.");
 
   tramp_table = region;
   inline_tramp_table = region + pagesize/2;
@@ -844,27 +842,20 @@ hook_freelist(int entry)
     freelist_inliners[0] = bin_find_symbol("garbage_collect", &sizes[0]);
   if (!freelist_inliners[0]) {
     /* couldn't find anything containing gc_sweep. */
-    fprintf(stderr, "Couldn't find gc_sweep or garbage_collect!\n");
-    return;
+    errx(EX_SOFTWARE, "Couldn't find gc_sweep or garbage_collect!");
   }
 
   freelist_inliners[1] = bin_find_symbol("finalize_list", &sizes[1]);
-  if (!freelist_inliners[1]) {
-    fprintf(stderr, "Couldn't find finalize_list!\n");
-    /* XXX continue or exit? */
-  }
+  if (!freelist_inliners[1])
+    errx(EX_SOFTWARE, "Couldn't find finalize_list!");
 
   freelist_inliners[2] = bin_find_symbol("rb_gc_force_recycle", &sizes[2]);
-  if (!freelist_inliners[2]) {
-    fprintf(stderr, "Couldn't find rb_gc_force_recycle!\n");
-    /* XXX continue or exit? */
-  }
+  if (!freelist_inliners[2])
+    errx(EX_SOFTWARE, "Couldn't find rb_gc_force_recycle!");
 
   freelist = bin_find_symbol("freelist", NULL);
-  if (!freelist) {
-    fprintf(stderr, "Couldn't find freelist!\n");
-    return;
-  }
+  if (!freelist)
+    errx(EX_SOFTWARE, "Couldn't find freelist!");
 
   /* start the search for places to insert the inline tramp */
 
@@ -896,7 +887,8 @@ hook_freelist(int entry)
     byte++;
   }
 
-  assert(tramps_completed == 3);
+  if (tramps_completed != 3)
+    errx(EX_SOFTWARE, "Inline add_freelist tramp insertion failed! Only inserted %d tramps.", tramps_completed);
 }
 
 static void
@@ -911,7 +903,7 @@ insert_tramp(char *trampee, void *tramp)
       inline_tramp_size++;
       hook_freelist(inline_ent);
     } else {
-      return;
+      errx(EX_SOFTWARE, "Failed to locate required symbol %s", trampee);
     }
   } else {
     if (strcmp("add_freelist", trampee) == 0) {
