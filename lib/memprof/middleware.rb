@@ -1,4 +1,4 @@
-require File.expand_path('../../ext/memprof')
+require File.expand_path('../../lib/memprof')
 module Memprof
   class Middleware
     def initialize(app)
