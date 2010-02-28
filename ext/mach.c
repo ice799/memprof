@@ -191,7 +191,7 @@ update_bin_for_mach_header(const struct mach_header *header, intptr_t slide, voi
  * that's just arbitrary data and the dyld system knows nothing about it.
  */
 
-int
+static int
 find_dyld_image_index(const struct mach_header_64 *hdr) {
   int i;
 
@@ -216,7 +216,7 @@ find_dyld_image_index(const struct mach_header_64 *hdr) {
  * !!! The pointer returned by this function must be freed !!!
  */
 
-void *
+static void *
 get_ruby_file_and_header_index(int *index) {
   void *ptr = NULL;
   void *buf = NULL;
@@ -254,7 +254,7 @@ get_ruby_file_and_header_index(int *index) {
  * It is used by qsort in build_sorted_nlist_table.
  */
 
-int
+static int
 nlist_cmp(const void *obj1, const void *obj2) {
   const struct nlist_64 *nlist1 = *(const struct nlist_64**) obj1;
   const struct nlist_64 *nlist2 = *(const struct nlist_64**) obj2;
@@ -275,7 +275,7 @@ nlist_cmp(const void *obj1, const void *obj2) {
  * !!! The pointer returned by this function must be freed !!!
  */
 
-const struct nlist_64 **
+static const struct nlist_64 **
 build_sorted_nlist_table(const struct mach_header_64 *hdr, uint32_t *nsyms, uint32_t *stroff) {
   const struct nlist_64 **base;
   uint32_t i, j;
