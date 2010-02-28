@@ -126,7 +126,7 @@ arch_insert_inline_st2_tramp(void *addr, void *marker, void *trampoline, void *t
 
   /* TODO make this a compile time assert */
   assert(sizeof(struct inline_st1_base) ==
-         sizeof(struct inline_tramp_st2_entry));
+         sizeof(struct inline_st1_tramp));
 
   if (!arch_check_ins(base))
     return 1;
