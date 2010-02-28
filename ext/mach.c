@@ -56,11 +56,13 @@ set_dyld_stub_target(struct dyld_stub_entry *entry, void *addr) {
 /*
  * Search all entries in a stub table for the stub that corresponds to trampee_addr,
  * and overwrite to point at our trampoline code.
+ * Returns 0 if any tramps were successfully inserted.
  */
 
-static void
+static int
 update_dyld_stub_table(void *table, uint64_t len, void *trampee_addr, struct tramp_st2_entry *tramp)
 {
+  int ret = -1;
   struct dyld_stub_entry *entry = (struct dyld_stub_entry*) table;
   void *max_addr = table + len;
 
@@ -68,8 +70,10 @@ update_dyld_stub_table(void *table, uint64_t len, void *trampee_addr, struct tra
     void *target = get_dyld_stub_target(entry);
     if (trampee_addr == target) {
       set_dyld_stub_target(entry, tramp->addr);
+      ret = 0;
     }
   }
+  return ret;
 }
 
 /*
@@ -104,10 +108,12 @@ should_update_stub_table(void *addr) {
  * Attempts to update all necessary code in a given 'section' of a Mach-O image, to redirect
  * the given function to the trampoline. This function takes care of both normal calls as well as
  * shared library cases.
+ * Returns 0 if any tramps were successfully inserted.
  */
 
-static void
+static int
 update_mach_section(const struct mach_header *header, const struct section_64 *sect, intptr_t slide, void *trampee_addr, struct tramp_st2_entry *tramp) {
+  int ret = -1;
   uint64_t len = 0;
   /*
    * We should be able to calculate this information from the section_64 struct ourselves,
@@ -119,27 +125,35 @@ update_mach_section(const struct mach_header *header, const struct section_64 *s
   void *section = getsectdatafromheader_64((const struct mach_header_64*)header, "__TEXT", sect->sectname, &len) + slide;
 
   if (strncmp(sect->sectname, "__symbol_stub", 13) == 0) {
-    if (should_update_stub_table(section))
-      update_dyld_stub_table(section, sect->size, trampee_addr, tramp);
-    return;
+    if (should_update_stub_table(section)) {
+      if (update_dyld_stub_table(section, sect->size, trampee_addr, tramp) == 0) {
+        ret = 0;
+      }
+    }
+    return ret;
   }
 
   /* TODO: check the filename just like we do above for stub sections. No reason to look at unrelated files. */
   if (strcmp(sect->sectname, "__text") == 0) {
     size_t count = 0;
     for(; count < len; section++, count++) {
-      arch_insert_st1_tramp(section, trampee_addr, tramp);
+      if (arch_insert_st1_tramp(section, trampee_addr, tramp) == 0) {
+        ret = 0;
+      }
     }
   }
+  return ret;
 }
 
 /*
  * For a given Mach-O image, iterates over all segments and their sections, passing
  * the sections to update_mach_section for potential tramping.
+ * Returns 0 if any tramps were successfully inserted.
  */
 
-static void
+static int
 update_bin_for_mach_header(const struct mach_header *header, intptr_t slide, void *trampee_addr, struct tramp_st2_entry *tramp) {
+  int ret = -1;
   int i, j;
   int lc_count = header->ncmds;
 
@@ -160,10 +174,13 @@ update_bin_for_mach_header(const struct mach_header *header, intptr_t slide, voi
 
       /* Attempt to tramp the sections */
       for (j=0; j < section_count; j++, sect++) {
-        update_mach_section(header, sect, slide, trampee_addr, tramp);
+        if (update_mach_section(header, sect, slide, trampee_addr, tramp) == 0) {
+          ret = 0;
+        }
       }
     }
   }
+  return ret;
 }
 
 /* This function takes a pointer to an *in process* mach_header_64
@@ -390,9 +407,10 @@ bin_find_symbol(char *symbol, size_t *size) {
  * end
  */
 
-void
+int
 bin_update_image(char *trampee, struct tramp_st2_entry *tramp)
 {
+  int ret = -1;
   int i;
   int header_count = _dyld_image_count();
   void *trampee_addr = bin_find_symbol(trampee, NULL);
@@ -403,8 +421,10 @@ bin_update_image(char *trampee, struct tramp_st2_entry *tramp)
     if ((void*)current_hdr == &_mh_bundle_header)
       continue;
 
-    update_bin_for_mach_header(current_hdr, _dyld_get_image_vmaddr_slide(i), trampee_addr, tramp);
+    if (update_bin_for_mach_header(current_hdr, _dyld_get_image_vmaddr_slide(i), trampee_addr, tramp) == 0)
+      ret = 0;
   }
+  return ret;
 }
 
 void *

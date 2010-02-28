@@ -160,7 +160,7 @@ bin_find_symbol(char *sym, size_t *size)
   return do_bin_find_symbol(sym, size, ruby_info);
 }
 
-void
+int
 bin_update_image(char *trampee, struct tramp_st2_entry *tramp)
 {
   void *trampee_addr = NULL;
@@ -172,7 +172,7 @@ bin_update_image(char *trampee, struct tramp_st2_entry *tramp)
     int num = 0;
 
     for(; count < ruby_info->text_segment_len; byte++, count++) {
-      if (arch_insert_st1_tramp(byte, trampee_addr, tramp)) {
+      if (arch_insert_st1_tramp(byte, trampee_addr, tramp) == 0) {
         // printf("tramped %x\n", byte);
         num++;
       }
@@ -181,6 +181,7 @@ bin_update_image(char *trampee, struct tramp_st2_entry *tramp)
     trampee_addr = find_got_addr(trampee, NULL);
     arch_overwrite_got(trampee_addr, tramp->addr);
   }
+  return 0;
 }
 
 

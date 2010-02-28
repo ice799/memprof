@@ -911,7 +911,8 @@ insert_tramp(char *trampee, void *tramp)
     }
 
     tramp_table[tramp_size].addr = tramp;
-    bin_update_image(trampee, &tramp_table[tramp_size]);
+    if (bin_update_image(trampee, &tramp_table[tramp_size]) != 0)
+      errx(EX_SOFTWARE, "Failed to insert tramp for %s", trampee);
     tramp_size++;
   }
 }

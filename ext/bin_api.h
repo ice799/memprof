@@ -39,6 +39,6 @@ bin_type_size(char *type);
 int
 bin_type_member_offset(char *type, char *member);
 
-void
+int
 bin_update_image(char *trampee_addr, struct tramp_st2_entry *tramp);
 #endif

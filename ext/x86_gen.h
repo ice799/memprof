@@ -129,11 +129,11 @@ arch_insert_st1_tramp(void *start, void *trampee, void *tramp)
       WRITE_INSTRUCTIONS(&check->displacement,
                          sizeof(*check),
                          (check->displacement = (tramp - (void *)(check + 1))));
-      return 1;
+      return 0;
     }
   }
 
-  return 0;
+  return -1;
 }
 
 /*
