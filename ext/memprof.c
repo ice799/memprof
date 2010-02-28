@@ -892,7 +892,7 @@ hook_freelist(int entry)
 }
 
 static void
-insert_tramp(char *trampee, void *tramp)
+insert_tramp(const char *trampee, void *tramp)
 {
   void *trampee_addr = bin_find_symbol(trampee, NULL);
   int inline_ent = inline_tramp_size;

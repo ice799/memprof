@@ -25,10 +25,7 @@ void
 bin_init();
 
 void *
-bin_find_symbol(char *sym, size_t *size);
-
-void *
-bin_find_got_addr(char *sym, void *cookie);
+bin_find_symbol(const char *sym, size_t *size);
 
 void *
 bin_allocate_page();
@@ -40,5 +37,5 @@ int
 bin_type_member_offset(char *type, char *member);
 
 int
-bin_update_image(char *trampee_addr, struct tramp_st2_entry *tramp);
+bin_update_image(const char *trampee_addr, struct tramp_st2_entry *tramp);
 #endif
