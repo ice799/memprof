@@ -161,7 +161,7 @@ bin_find_symbol(char *sym, size_t *size)
 }
 
 void
-bin_update_image(int entry, char *trampee, struct tramp_st2_entry *tramp)
+bin_update_image(char *trampee, struct tramp_st2_entry *tramp)
 {
   void *trampee_addr = NULL;
 

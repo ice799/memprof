@@ -391,7 +391,7 @@ bin_find_symbol(char *symbol, size_t *size) {
  */
 
 void
-bin_update_image(int entry, char *trampee, struct tramp_st2_entry *tramp)
+bin_update_image(char *trampee, struct tramp_st2_entry *tramp)
 {
   int i;
   int header_count = _dyld_image_count();

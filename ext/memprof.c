@@ -903,7 +903,6 @@ static void
 insert_tramp(char *trampee, void *tramp)
 {
   void *trampee_addr = bin_find_symbol(trampee, NULL);
-  int entry = tramp_size;
   int inline_ent = inline_tramp_size;
 
   if (trampee_addr == NULL) {
@@ -920,7 +919,7 @@ insert_tramp(char *trampee, void *tramp)
     }
 
     tramp_table[tramp_size].addr = tramp;
-    bin_update_image(entry, trampee, &tramp_table[tramp_size]);
+    bin_update_image(trampee, &tramp_table[tramp_size]);
     tramp_size++;
   }
 }

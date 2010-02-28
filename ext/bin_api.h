@@ -40,5 +40,5 @@ int
 bin_type_member_offset(char *type, char *member);
 
 void
-bin_update_image(int entry, char *trampee_addr, struct tramp_st2_entry *tramp);
+bin_update_image(char *trampee_addr, struct tramp_st2_entry *tramp);
 #endif
