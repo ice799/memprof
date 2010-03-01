@@ -322,7 +322,7 @@ build_sorted_nlist_table(const struct mach_header_64 *hdr, uint32_t *nsyms, uint
  */
 
 void *
-bin_find_symbol(char *symbol, size_t *size) {
+bin_find_symbol(const char *symbol, size_t *size) {
   /* Correctly prefix the symbol with a '_' (whats a prettier way to do this?) */
   size_t len = strlen(symbol);
   char real_symbol[len + 2];
@@ -408,7 +408,7 @@ bin_find_symbol(char *symbol, size_t *size) {
  */
 
 int
-bin_update_image(char *trampee, struct tramp_st2_entry *tramp)
+bin_update_image(const char *trampee, struct tramp_st2_entry *tramp)
 {
   int ret = -1;
   int i;
