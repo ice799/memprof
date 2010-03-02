@@ -445,14 +445,14 @@ bin_allocate_page()
   return NULL;
 }
 
-int
-bin_type_size(char *type)
+size_t
+bin_type_size(const char *type)
 {
   return -1;
 }
 
 int
-bin_type_member_offset(char *type, char *member)
+bin_type_member_offset(const char *type, char *member)
 {
   return -1;
 }
