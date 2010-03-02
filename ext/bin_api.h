@@ -73,7 +73,7 @@ bin_type_size(const char *type);
  * On failure, this function returns -1.
  */
 int
-bin_type_member_offset(const char *type, char *member);
+bin_type_member_offset(const char *type, const char *member);
 
 /*
  * bin_update_image - Update a binary image in memory

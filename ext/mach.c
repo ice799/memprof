@@ -448,11 +448,11 @@ bin_allocate_page()
 size_t
 bin_type_size(const char *type)
 {
-  return -1;
+  return 0;
 }
 
 int
-bin_type_member_offset(const char *type, char *member)
+bin_type_member_offset(const char *type, const char *member)
 {
   return -1;
 }

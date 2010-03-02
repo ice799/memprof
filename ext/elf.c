@@ -539,7 +539,7 @@ bin_type_size(const char *name)
 }
 
 int
-bin_type_member_offset(const char *type, char *member)
+bin_type_member_offset(const char *type, const char *member)
 {
   Dwarf_Error error;
   int res = DW_DLV_ERROR;
