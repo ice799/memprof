@@ -112,6 +112,8 @@ copy_instructions(void *dest, void *src, size_t count)
  *    - check that the instruction at call is actually a call
  *    - if so, check that the target of the call is trampee
  *    - and change the target to tramp
+ *
+ * Returns 0 on success, 1 otherwise.
  */
 int
 arch_insert_st1_tramp(void *start, void *trampee, void *tramp)
@@ -133,7 +135,7 @@ arch_insert_st1_tramp(void *start, void *trampee, void *tramp)
     }
   }
 
-  return -1;
+  return 1;
 }
 
 /*
