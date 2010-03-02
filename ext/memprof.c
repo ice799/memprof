@@ -121,6 +121,7 @@ objs_tabulate(st_data_t key, st_data_t record, st_data_t arg)
   char *source_key = NULL;
   unsigned long count = 0;
   char *type = NULL;
+  int bytes_printed = 0;
 
   switch (TYPE(tracker->obj)) {
     case T_NONE:
@@ -143,7 +144,8 @@ objs_tabulate(st_data_t key, st_data_t record, st_data_t arg)
       }
   }
 
-  asprintf(&source_key, "%s:%d:%s", tracker->source, tracker->line, type);
+  bytes_printed = asprintf(&source_key, "%s:%d:%s", tracker->source, tracker->line, type);
+  assert(bytes_printed != -1);
   st_lookup(table, (st_data_t)source_key, (st_data_t *)&count);
   if (st_insert(table, (st_data_t)source_key, ++count)) {
     free(source_key);
@@ -163,8 +165,10 @@ objs_to_array(st_data_t key, st_data_t record, st_data_t arg)
   struct results *res = (struct results *)arg;
   unsigned long count = (unsigned long)record;
   char *source = (char *)key;
-  
-  asprintf(&(res->entries[res->num_entries++]), "%7li %s", count, source);
+  int bytes_printed = 0;
+
+  bytes_printed = asprintf(&(res->entries[res->num_entries++]), "%7li %s", count, source);
+  assert(bytes_printed != -1);
 
   free(source);
   return ST_DELETE;
@@ -285,10 +289,13 @@ yajl_gen_format(yajl_gen gen, char *format, ...)
 {
   va_list args;
   char *str;
+  int bytes_printed = 0;
+
   yajl_gen_status ret;
 
   va_start(args, format);
-  vasprintf(&str, format, args);
+  bytes_printed = vasprintf(&str, format, args);
+  assert(bytes_printed != -1);
   va_end(args);
 
   ret = yajl_gen_string(gen, (unsigned char *)str, strlen(str));
@@ -730,10 +737,10 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   int heaps_used = *(int*)bin_find_symbol("heaps_used",0);
 
 #ifndef sizeof__RVALUE
-  int sizeof__RVALUE = bin_type_size("RVALUE");
+  size_t sizeof__RVALUE = bin_type_size("RVALUE");
 #endif
 #ifndef sizeof__heaps_slot
-  int sizeof__heaps_slot = bin_type_size("heaps_slot");
+  size_t sizeof__heaps_slot = bin_type_size("heaps_slot");
 #endif
 #ifndef offset__heaps_slot__limit
   int offset__heaps_slot__limit = bin_type_member_offset("heaps_slot", "limit");
@@ -745,7 +752,7 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   char *p, *pend;
   int i, limit;
 
-  if (sizeof__RVALUE < 0 || sizeof__heaps_slot < 0)
+  if (sizeof__RVALUE == 0 || sizeof__heaps_slot == 0)
     rb_raise(eUnsupported, "could not find internal heap");
 
   VALUE str;

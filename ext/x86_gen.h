@@ -24,35 +24,6 @@ struct st1_base {
 };
 
 /*
- * plt_entry - procedure linkage table entry
- *
- * This struct is intended to be "laid onto" a piece of memory to ease the
- * parsing, use, modification, and length calculation of PLT entries.
- *
- * For example:
- *    jmpq  *0xaaf00d(%rip)   # jump to GOT entry
- *
- *    # the following instructions are only hit if function has not been
- *    # resolved previously.
- *
- *    pushq  $0x4e            # push ID
- *    jmpq  0xcafebabefeedface # invoke the link linker
- */
-struct plt_entry {
-    unsigned char jmp[2];
-    int32_t jmp_disp;
-
-    /* There is no reason (currently) to represent the pushq and jmpq
-     * instructions which invoke the linker.
-     *
-     * We don't need those to hook the GOT; we only need the jmp_disp above.
-     *
-     * TODO represent the extra instructions
-     */
-    unsigned char pad[10];
-} __attribute__((__packed__));
-
-/*
  * page_align - given an address, return a page aligned form
  *
  * TODO Don't assume page size, get it from sysconf and cache the result
@@ -136,31 +107,6 @@ arch_insert_st1_tramp(void *start, void *trampee, void *tramp)
   }
 
   return 1;
-}
-
-/*
- * get_got_addr - given a PLT entry, return the global offset table entry that
- * the entry uses.
- */
-static void *
-get_got_addr(struct plt_entry *plt)
-{
-  assert(plt != NULL);
-  /* the jump is relative to the start of the next instruction. */
-  return (void *)&(plt->pad) + plt->jmp_disp;
-}
-
-/*
- * arch_overwrite_got - given the address of a PLT entry, overwrite the address
- * in the GOT that the PLT entry uses with the address in tramp.
- */
-void
-arch_overwrite_got(void *plt, void *tramp)
-{
-  assert(plt != NULL);
-  assert(tramp != NULL);
-  memcpy(get_got_addr(plt), &tramp, sizeof(void *));
-  return;
 }
 
 /*
