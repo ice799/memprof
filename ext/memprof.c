@@ -51,6 +51,51 @@ struct obj_track {
   int line;
 };
 
+static VALUE gc_hook;
+static void **ptr_to_rb_mark_table_add_filename = NULL;
+static void (*rb_mark_table_add_filename)(char*);
+
+static int
+ree_sourcefile_mark_each(st_data_t key, st_data_t val, st_data_t arg)
+{
+  struct obj_track *tracker = (struct obj_track *)val;
+  assert(tracker != NULL);
+
+  if (tracker->source)
+    rb_mark_table_add_filename(tracker->source);
+  return ST_CONTINUE;
+}
+
+static int
+mri_sourcefile_mark_each(st_data_t key, st_data_t val, st_data_t arg)
+{
+  struct obj_track *tracker = (struct obj_track *)val;
+  assert(tracker != NULL);
+
+  if (tracker->source)
+    (tracker->source)[-1] = 1;
+  return ST_CONTINUE;
+}
+
+/* Accomodate the different source file marking techniques of MRI and REE.
+ *
+ * The function pointer for REE changes depending on whether COW is enabled,
+ * which can be toggled at runtime. We need to deference it to get the
+ * real function every time we come here, as it may have changed.
+ */
+
+static void
+sourcefile_marker()
+{
+  if (ptr_to_rb_mark_table_add_filename) {
+    rb_mark_table_add_filename = *ptr_to_rb_mark_table_add_filename;
+    assert(rb_mark_table_add_filename != NULL);
+    st_foreach(objs, ree_sourcefile_mark_each, (st_data_t)NULL);
+  } else {
+    st_foreach(objs, mri_sourcefile_mark_each, (st_data_t)NULL);
+  }
+}
+
 static VALUE
 newobj_tramp()
 {
@@ -62,13 +107,13 @@ newobj_tramp()
 
     if (tracker) {
       if (ruby_current_node && ruby_current_node->nd_file && *ruby_current_node->nd_file) {
-        tracker->source = strdup(ruby_current_node->nd_file);
+        tracker->source = ruby_current_node->nd_file;
         tracker->line = nd_line(ruby_current_node);
       } else if (ruby_sourcefile) {
-        tracker->source = strdup(ruby_sourcefile);
+        tracker->source = ruby_sourcefile;
         tracker->line = ruby_sourceline;
       } else {
-        tracker->source = strdup("__null__");
+        tracker->source = NULL;
         tracker->line = 0;
       }
 
@@ -98,7 +143,6 @@ freelist_tramp(unsigned long rval)
   if (track_objs && objs) {
     st_delete(objs, (st_data_t *) &rval, (st_data_t *) &tracker);
     if (tracker) {
-      free(tracker->source);
       free(tracker);
     }
   }
@@ -108,7 +152,6 @@ static int
 objs_free(st_data_t key, st_data_t record, st_data_t arg)
 {
   struct obj_track *tracker = (struct obj_track *)record;
-  free(tracker->source);
   free(tracker);
   return ST_DELETE;
 }
@@ -144,7 +187,7 @@ objs_tabulate(st_data_t key, st_data_t record, st_data_t arg)
       }
   }
 
-  bytes_printed = asprintf(&source_key, "%s:%d:%s", tracker->source, tracker->line, type);
+  bytes_printed = asprintf(&source_key, "%s:%d:%s", tracker->source ? tracker->source : "__null__", tracker->line, type);
   assert(bytes_printed != -1);
   st_lookup(table, (st_data_t)source_key, (st_data_t *)&count);
   if (st_insert(table, (st_data_t)source_key, ++count)) {
@@ -942,6 +985,10 @@ Init_memprof()
   bin_init();
   create_tramp_table();
   rb_add_freelist = NULL;
+
+  gc_hook = Data_Wrap_Struct(rb_cObject, sourcefile_marker, NULL, NULL);
+  rb_global_variable(&gc_hook);
+  ptr_to_rb_mark_table_add_filename = bin_find_symbol("rb_mark_table_add_filename", NULL);
 
   insert_tramp("rb_newobj", newobj_tramp);
   insert_tramp("add_freelist", freelist_tramp);
