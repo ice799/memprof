@@ -3,12 +3,14 @@
 #include "bin_api.h"
 #include "arch.h"
 
+#include <assert.h>
 #include <dwarf.h>
 #include <err.h>
 #include <error.h>
 #include <fcntl.h>
 #include <libdwarf.h>
 #include <libelf/gelf.h>
+#include <limits.h>
 #include <link.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,11 +20,15 @@
 
 #include <sys/mman.h>
 
-/* ruby binary info */
-static int has_libruby = 0;
+/* The size of a PLT entry */
+#define PLT_ENTRY_SZ  (16)
+
+/* Keep track of whether this ruby is built with a shared library or not */
+static int libruby = 0;
 
 static Dwarf_Debug dwrf = NULL;
 
+/* Set of ELF specific state about this Ruby binary/shared object */
 static struct elf_info *ruby_info = NULL;
 
 struct elf_info {
@@ -54,20 +60,88 @@ struct elf_info {
   const char *filename;
 };
 
+/*
+ * plt_entry - procedure linkage table entry
+ *
+ * This struct is intended to be "laid onto" a piece of memory to ease the
+ * parsing, use, modification, and length calculation of PLT entries.
+ *
+ * For example:
+ *    jmpq  *0xaaf00d(%rip)   # jump to GOT entry
+ *
+ *    # the following instructions are only hit if function has not been
+ *    # resolved previously.
+ *
+ *    pushq  $0x4e            # push ID
+ *    jmpq  0xcafebabefeedface # invoke the link linker
+ */
+struct plt_entry {
+    unsigned char jmp[2];
+    int32_t jmp_disp;
 
+    /* There is no reason (currently) to represent the pushq and jmpq
+     * instructions which invoke the linker.
+     *
+     * We don't need those to hook the GOT; we only need the jmp_disp above.
+     *
+     * TODO represent the extra instructions
+     */
+    unsigned char pad[10];
+} __attribute__((__packed__));
+
+/*
+ * get_got_addr - given a PLT entry, return the global offset table entry that
+ * the entry uses.
+ */
 static void *
-do_bin_allocate_page(void *cookie)
+get_got_addr(struct plt_entry *plt)
+{
+  assert(plt != NULL);
+  /* the jump is relative to the start of the next instruction. */
+  return (void *)&(plt->pad) + plt->jmp_disp;
+}
+
+/*
+ * overwrite_got - given the address of a PLT entry, overwrite the address
+ * in the GOT that the PLT entry uses with the address in tramp.
+ */
+static void
+overwrite_got(void *plt, void *tramp)
+{
+  assert(plt != NULL);
+  assert(tramp != NULL);
+  memcpy(get_got_addr(plt), &tramp, sizeof(void *));
+  return;
+}
+
+/*
+ * do_bin_allocate_page - internal page allocation routine
+ *
+ * This function allocates a page suitable for stage 2 trampolines. This page
+ * is allocated based on the location of the text segment of the Ruby binary
+ * or libruby.
+ *
+ * The page has to be located in a 32bit window from the Ruby code so that
+ * jump and call instructions can redirect execution there.
+ *
+ * This function returns the address of the page found or NULL if no page was
+ * found.
+ */
+static void *
+do_bin_allocate_page(struct elf_info *info)
 {
   void * ret = NULL, *addr = NULL;
-  struct elf_info *info = cookie;
-  uint16_t max = ~0, count = 0;
+  uint16_t count = 0;
 
   if (!info)
     return NULL;
 
-  if (has_libruby) {
+  if (libruby) {
+    /* There is a libruby. Start at the end of the text segment and search for
+     * a page.
+     */
     addr = info->text_segment + info->text_segment_len;
-    for (; count < max;addr += pagesize, count += pagesize) {
+    for (; count < UINT_MAX; addr += pagesize, count += pagesize) {
       ret = mmap(addr, pagesize, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_ANON|MAP_PRIVATE, -1, 0);
       if (ret != MAP_FAILED) {
         memset(ret, 0x90, pagesize);
@@ -75,34 +149,69 @@ do_bin_allocate_page(void *cookie)
       }
     }
   } else {
+    /* if there is no libruby, use the linux specific MAP_32BIT flag which will
+     * grab a page in the lower 4gb of the address space.
+     */
+    assert((size_t)info->text_segment <= UINT_MAX);
     return mmap(NULL, pagesize, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_ANON|MAP_PRIVATE|MAP_32BIT, -1, 0);
   }
 
   return NULL;
 }
 
+/*
+ * bin_allocate_page - allocate a page suitable for holding stage 2 trampolines
+ *
+ * This function is just a wrapper which passes through some internal state.
+ */
 void *
 bin_allocate_page()
 {
   return do_bin_allocate_page(ruby_info);
 }
 
+/*
+ * get_plt_addr - architecture specific PLT entry retrieval
+ *
+ * Given the internal data and an index, this function returns the address of
+ * the PLT entry at that address.
+ *
+ * A PLT entry takes the form:
+ *
+ * jmpq *0xfeedface(%rip)
+ * pushq $0xaa
+ * jmpq 17110
+ */
 static inline GElf_Addr
-arch_plt_sym_val(struct elf_info *info, size_t ndx) {
+get_plt_addr(struct elf_info *info, size_t ndx) {
+  assert(info != NULL);
   return info->base_addr + info->plt_addr + (ndx + 1) * 16;
 }
 
+/*
+ * find_got_addr - find the global offset table entry for specific symbol name.
+ *
+ * Given:
+ *  - syname - the symbol name
+ *  - info   - internal information about the ELF object to search
+ *
+ * This function searches the .rela.plt section of an ELF binary, searcing for
+ * entries that match the symbol name passed in. If one is found, the address
+ * of corresponding entry in .plt is returned.
+ */
 static void *
-find_got_addr(char *symname, void *cookie)
+find_plt_addr(const char *symname, struct elf_info *info)
 {
-  size_t i = 0;
-  struct elf_info *info = cookie;
+  assert(symname != NULL);
 
-  if (cookie == NULL) {
+  size_t i = 0;
+
+  if (info == NULL) {
     info = ruby_info;
   }
 
-  for (i = 0; i < info->relplt_count; ++i) {
+  /* Search through each of the .rela.plt entries */
+  for (i = 0; i < info->relplt_count; i++) {
     GElf_Rela rela;
     GElf_Sym sym;
     GElf_Addr addr;
@@ -118,8 +227,12 @@ find_got_addr(char *symname, void *cookie)
         return NULL;
 
       name = info->dynstr + sym.st_name;
+
+      /* The name matches the name of the symbol passed in, so get the PLT entry
+       * address and return it.
+       */
       if (strcmp(symname, name) == 0) {
-        addr = arch_plt_sym_val(info, i);
+        addr = get_plt_addr(info, i);
         return (void *)addr;
       }
     }
@@ -128,13 +241,32 @@ find_got_addr(char *symname, void *cookie)
   return NULL;
 }
 
+/*
+ * do_bin_find_symbol - internal symbol lookup function.
+ *
+ * Given:
+ *  - sym - the symbol name to look up
+ *  - size - an optional out argument holding the size of the symbol
+ *  - elf - an elf information structure
+ *
+ * This function will return the address of the symbol (setting size if desired)
+ * or NULL if nothing can be found.
+ */
 static void *
-do_bin_find_symbol(char *sym, size_t *size, struct elf_info *elf)
+do_bin_find_symbol(const char *sym, size_t *size, struct elf_info *elf)
 {
   char *name = NULL;
 
+  assert(sym != NULL);
+  assert(elf != NULL);
+
+  assert(elf->symtab_data != NULL);
+  assert(elf->symtab_data->d_buf != NULL);
+
   ElfW(Sym) *esym = (ElfW(Sym)*) elf->symtab_data->d_buf;
   ElfW(Sym) *lastsym = (ElfW(Sym)*) ((char*) elf->symtab_data->d_buf + elf->symtab_data->d_size);
+
+  assert(esym <= lastsym);
 
   for (; esym < lastsym; esym++){
     /* ignore weak/numeric/empty symbols */
@@ -144,6 +276,9 @@ do_bin_find_symbol(char *sym, size_t *size, struct elf_info *elf)
       continue;
 
     name = elf_strptr(elf->elf, elf->symtab_shdr.sh_link, (size_t)esym->st_name);
+
+    assert(name != NULL);
+
     if (strcmp(name, sym) == 0) {
       if (size) {
         *size = esym->st_size;
@@ -154,38 +289,64 @@ do_bin_find_symbol(char *sym, size_t *size, struct elf_info *elf)
   return NULL;
 }
 
+/*
+ * bin_find_symbol - find the address of a given symbol and set its size if
+ * desired.
+ *
+ * This function is just a wrapper for the internal symbol lookup function.
+ */
 void *
-bin_find_symbol(char *sym, size_t *size)
+bin_find_symbol(const char *sym, size_t *size)
 {
   return do_bin_find_symbol(sym, size, ruby_info);
 }
 
-void
-bin_update_image(int entry, char *trampee, struct tramp_st2_entry *tramp)
+/*
+ * bin_update_image - update the ruby binary image in memory.
+ *
+ * Given -
+ *  trampee - the name of the symbol to hook
+ *  tramp - the stage 2 trampoline entry
+ *
+ * This function will update the ruby binary image so that all calls to trampee
+ * will be routed to tramp.
+ *
+ * Returns 0 on success
+ */
+int
+bin_update_image(const char *trampee, struct tramp_st2_entry *tramp)
 {
   void *trampee_addr = NULL;
 
-  if (!has_libruby) {
+  assert(trampee != NULL);
+  assert(tramp != NULL);
+  assert(tramp->addr != NULL);
+
+  if (!libruby) {
     unsigned char *byte = ruby_info->text_segment;
     trampee_addr = bin_find_symbol(trampee, NULL);
     size_t count = 0;
     int num = 0;
 
+    assert(byte != NULL);
+    assert(trampee_addr != NULL);
+
     for(; count < ruby_info->text_segment_len; byte++, count++) {
-      if (arch_insert_st1_tramp(byte, trampee_addr, tramp)) {
-        // printf("tramped %x\n", byte);
+      if (arch_insert_st1_tramp(byte, trampee_addr, tramp) == 0) {
         num++;
       }
     }
   } else {
-    trampee_addr = find_got_addr(trampee, NULL);
-    arch_overwrite_got(trampee_addr, tramp->addr);
+    trampee_addr = find_plt_addr(trampee, NULL);
+    assert(trampee_addr != NULL);
+    overwrite_got(trampee_addr, tramp->addr);
   }
+  return 0;
 }
 
 
 static Dwarf_Die
-check_die(Dwarf_Die die, char *search, Dwarf_Half type)
+check_die(Dwarf_Die die, const char *search, Dwarf_Half type)
 {
   char *name = 0;
   Dwarf_Error error = 0;
@@ -217,7 +378,7 @@ check_die(Dwarf_Die die, char *search, Dwarf_Half type)
 }
 
 static Dwarf_Die
-search_dies(Dwarf_Die die, char *name, Dwarf_Half type)
+search_dies(Dwarf_Die die, const char *name, Dwarf_Half type)
 {
   int res = DW_DLV_ERROR;
   Dwarf_Die cur_die=die;
@@ -269,7 +430,7 @@ search_dies(Dwarf_Die die, char *name, Dwarf_Half type)
 }
 
 static Dwarf_Die
-find_die(char *name, Dwarf_Half type)
+find_die(const char *name, Dwarf_Half type)
 {
   Dwarf_Die ret = 0;
   Dwarf_Unsigned cu_header_length = 0;
@@ -328,32 +489,37 @@ find_die(char *name, Dwarf_Half type)
   return ret ? ret : 0;
 }
 
+/*
+ * has_libruby - check if this ruby binary is linked against libruby.so
+ *
+ * This function checks if the curreny binary is linked against libruby. If
+ * so, it sets libruby = 1, and fill internal state in the elf_info structure.
+ *
+ * Returns 1 if this binary is linked to libruby.so, 0 if not.
+ */
 static int
-bin_has_libruby(struct elf_info *cookie)
+has_libruby(struct elf_info *lib)
 {
   struct link_map *map = _r_debug.r_map;
-  struct elf_info *lib = cookie;
 
-  if (has_libruby != -1) {
-    has_libruby = 0;
-    while (map) {
-      if (strstr(map->l_name, "libruby.so")) {
-        if (lib) {
-          lib->base_addr = (GElf_Addr)map->l_addr;
-          lib->filename = strdup(map->l_name);
-        }
-        has_libruby = 1;
-        break;
+  libruby = 0;
+  while (map) {
+    if (strstr(map->l_name, "libruby.so")) {
+      if (lib) {
+        lib->base_addr = (GElf_Addr)map->l_addr;
+        lib->filename = strdup(map->l_name);
       }
-      map = map->l_next;
+      libruby = 1;
+      break;
     }
+    map = map->l_next;
   }
 
-  return has_libruby;
+  return libruby;
 }
 
-int
-bin_type_size(char *name)
+size_t
+bin_type_size(const char *name)
 {
   Dwarf_Unsigned size = 0;
   Dwarf_Error error;
@@ -366,14 +532,14 @@ bin_type_size(char *name)
     res = dwarf_bytesize(die, &size, &error);
     dwarf_dealloc(dwrf,die,DW_DLA_DIE);
     if (res == DW_DLV_OK)
-      return (int)size;
+      return size;
   }
 
-  return -1;
+  return 0;
 }
 
 int
-bin_type_member_offset(char *type, char *member)
+bin_type_member_offset(const char *type, const char *member)
 {
   Dwarf_Error error;
   int res = DW_DLV_ERROR;
@@ -403,12 +569,21 @@ bin_type_member_offset(char *type, char *member)
   return -1;
 }
 
+/*
+ * open_elf - Opens a file from disk and gets the elf reader started.
+ *
+ * Given a filename, this function attempts to open the file and start the
+ * elf reader.
+ *
+ * Returns an Elf object.
+ */
 static Elf *
 open_elf(const char *filename)
 {
   Elf *ret = NULL;
   int fd = 0;
 
+  assert(filename != NULL);
   if (elf_version(EV_CURRENT) == EV_NONE)
     errx(EX_SOFTWARE, "ELF library initialization failed: %s",
         elf_errmsg(-1));
@@ -423,30 +598,48 @@ open_elf(const char *filename)
   if (elf_kind(ret) != ELF_K_ELF)
     errx(EX_DATAERR, "%s is not an ELF object.", filename);
 
+  assert(ret != NULL);
   return ret;
 }
 
+/*
+ * dissect_elf - Parses and stores internal data about an ELF object.
+ *
+ * Given an elf_info structure, this function will attempt to parse the object
+ * and store important state needed to rewrite the object later.
+ */
 static void
 dissect_elf(struct elf_info *info)
 {
+  assert(info != NULL);
+
   size_t shstrndx = 0;
   Elf *elf = info->elf;
   Elf_Scn *scn = NULL;
   GElf_Shdr shdr;
   size_t j = 0;
 
-  if (elf_getshdrstrndx(elf, &shstrndx) == -1)
+  if (elf_getshdrstrndx(elf, &shstrndx) == -1) {
     errx(EX_SOFTWARE, "getshstrndx() failed: %s.", elf_errmsg(-1));
+  }
 
-  if (gelf_getehdr(elf, &(info->ehdr)) == NULL)
+  if (gelf_getehdr(elf, &(info->ehdr)) == NULL) {
     errx(EX_SOFTWARE, "Couldn't get elf header.");
+  }
 
+  /* search each ELF header and store important data for each header... */
   while ((scn = elf_nextscn(elf, scn)) != NULL) {
     if (gelf_getshdr(scn, &shdr) != &shdr)
       errx(EX_SOFTWARE, "getshdr() failed: %s.",
           elf_errmsg(-1));
 
-    /* if there is a dynamic section ... */
+
+    /*
+     * The .dynamic section contains entries that are important to memprof.
+     * Specifically, the .rela.plt section information. The .rela.plt section
+     * indexes the .plt, which will be important for hooking functions in
+     * shared objects.
+     */
     if (shdr.sh_type == SHT_DYNAMIC) {
       Elf_Data *data;
       data = elf_getdata(scn, NULL);
@@ -465,7 +658,12 @@ dissect_elf(struct elf_info *info)
           info->plt_size = dyn.d_un.d_val;
         }
       }
-    } else if (shdr.sh_type == SHT_DYNSYM) {
+    }
+    /*
+     * The .dynsym section has useful pieces, too, like the dynamic symbol
+     * table. This table is used when walking the .rela.plt section.
+     */
+    else if (shdr.sh_type == SHT_DYNSYM) {
       Elf_Data *data;
 
       info->dynsym = elf_getdata(scn, NULL);
@@ -487,17 +685,29 @@ dissect_elf(struct elf_info *info)
               "Couldn't get .dynstr data");
 
       info->dynstr = data->d_buf;
-    } else if (shdr.sh_type == SHT_PROGBITS &&
+    }
+    /*
+     * Pull out information (start address and length) of the .text section.
+     */
+    else if (shdr.sh_type == SHT_PROGBITS &&
         (shdr.sh_flags == (SHF_ALLOC | SHF_EXECINSTR)) &&
         strcmp(elf_strptr(elf, shstrndx, shdr.sh_name), ".text") == 0) {
 
       info->text_segment = (void *)shdr.sh_addr + info->base_addr;
       info->text_segment_len = shdr.sh_size;
-    } else if (shdr.sh_type == SHT_PROGBITS) {
+    }
+    /*
+     * Pull out information (start address) of the .plt section.
+     */
+    else if (shdr.sh_type == SHT_PROGBITS) {
 	    if (strcmp(elf_strptr(elf, shstrndx, shdr.sh_name), ".plt") == 0) {
 		    info->plt_addr = shdr.sh_addr;
 	    }
-    } else if (shdr.sh_type == SHT_SYMTAB) {
+    }
+    /*
+     * The symbol table is also needed for bin_find_symbol
+     */
+    else if (shdr.sh_type == SHT_SYMTAB) {
       info->symtab_shdr = shdr;
       if ((info->symtab_data = elf_getdata(scn, info->symtab_data)) == NULL ||
           info->symtab_data->d_size == 0) {
@@ -507,11 +717,15 @@ dissect_elf(struct elf_info *info)
     }
   }
 
+  /* If this object has no symbol table there's nothing else to do but fail */
   if (!info->symtab_data) {
     errx(EX_DATAERR, "binary is stripped. memprof only works on binaries that are not stripped!");
   }
 
 
+  /*
+   * Walk the sections, pull out, and store the .plt section
+   */
   for (j = 1; j < info->ehdr.e_shnum; j++) {
     scn =  elf_getscn(elf, j);
     if (scn == NULL || gelf_getshdr(scn, &shdr) == NULL)
@@ -533,6 +747,11 @@ dissect_elf(struct elf_info *info)
   return;
 }
 
+/*
+ * bin_init - initialize the binary parsing/modification layer.
+ *
+ * This function starts the elf parser and sets up internal state.
+ */
 void
 bin_init()
 {
@@ -540,11 +759,12 @@ bin_init()
 
   ruby_info = calloc(1, sizeof(*ruby_info));
 
-  if (!ruby_info)
-    return;
+  if (!ruby_info) {
+    errx(EX_UNAVAILABLE, "Unable to allocate memory to start binary parsing layer");
+  }
 
-  if (!bin_has_libruby(ruby_info)) {
-    ruby_info->filename = strdup("/proc/self/exe");
+  if (!has_libruby(ruby_info)) {
+    ruby_info->filename = "/proc/self/exe";
     ruby_info->base_addr = 0;
   }
 

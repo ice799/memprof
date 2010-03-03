@@ -1,28 +1,60 @@
 #if defined (_ARCH_x86_64_)
 
+#include <assert.h>
 #include <stdint.h>
 #include <string.h>
 
 #include "arch.h"
 #include "x86_gen.h"
 
-/* This is the stage 1 inline trampoline for hooking the inlined add_freelist
- * function .
+/*
+ * inline_st1_tramp - inline stage 1 trampoline
  *
- * NOTE: The original instruction mov %reg, freelist is 7 bytes wide,
- * whereas jmpq $displacement is only 5 bytes wide. We *must* pad out
- * the next two bytes. This will be important to remember below.
+ * This is the stage 1 inline trampoline that will replace the mov instruction
+ * that updates freelist from the inlined function add_freelist.
+ *
+ * Note that the mov instruction is 7 bytes wide, so this trampoline needs two
+ * bytes of NOPs to keep it 7 bytes wide.
+ *
+ * In order to use this structure, you must set the displacement field to a
+ * 32bit displacement from the next instruction to the stage 2 trampoline.
+ *
+ * TODO replace the 2, 1 byte NOPs with a wider 16bit NOP.
+ *
+ * Original code:
+ *
+ *  mov REGISTER, freelist  # update the head of the freelist
+ *
+ *  size = 7 bytes
+ *
+ * Code after tramp:
+ *
+ *  jmp 0xfeedface(%rip)    # jump to stage 2 trampoline
+ *  nop                     # 1 byte NOP pad
+ *  nop                     # 1 byte NOP pad
+ *
+ *  size = 7 bytes
  */
 struct inline_st1_tramp {
   unsigned char jmp;
   int32_t displacement;
   unsigned char pad[2];
 } __attribute__((__packed__)) inline_st1_tramp = {
-  .jmp  = '\xe9',
+  .jmp  = 0xe9,
   .displacement = 0,
-  .pad = {'\x90','\x90'},
+  .pad = {0x90, 0x90},
 };
 
+/*
+ * inline_st1_base - inline stage 1 base instruction
+ *
+ * This structure is designed to be "laid onto" a piece of memory to ease the
+ * parsing, modification, and length calculation of the original instruction
+ * that will be overwritten with a jmp to the stage 2 trampoline.
+ *
+ * In order to use this structure, you must set the displacement, rex, and
+ * rex bytes to accurately represent the original instruction.
+ */
 struct inline_st1_base {
   unsigned char rex;
   unsigned char mov;
@@ -30,17 +62,24 @@ struct inline_st1_base {
   int32_t displacement;
 } __attribute__((__packed__)) inline_st1_mov = {
   .rex = 0,
-  .mov = '\x89',
+  .mov = 0x89,
   .src_reg = 0,
   .displacement = 0
 };
 
 /*
- *  inline tramp stuff below
+ * arch_check_ins - architecture specific instruction check
+ *
+ * This function checks the opcodes at a specific adderss to see if
+ * they could be a move instruction.
+ *
+ * Returns 1 if the address matches a mov, 0 otherwise.
  */
 static int
 arch_check_ins(struct inline_st1_base *base)
 {
+  assert(base != NULL);
+
   /* is it a mov instruction? */
   if (base->mov == 0x89 &&
 
@@ -55,11 +94,39 @@ arch_check_ins(struct inline_st1_base *base)
   return 0;
 }
 
+/*
+ * arch_insert_inline_st2_tramp - architecture specific stage 2 tramp insert
+ *
+ * Given:
+ *    - addr - The base address of an instruction sequence.
+ *
+ *    - marker - This is the marker to search for which will indicate that the
+ *      instruction sequence has been located.
+ *
+ *    - trampoline - The address of the handler to redirect execution to.
+ *
+ *    - table_entry - Address of where the stage 2 trampoline code will reside
+ *
+ * This function will:
+ *    Insert and setup the stage 1 and stage 2 trampolines if addr points to an
+ *    instruction that could be from the inlined add_freelist function.
+ *
+ * This function returns 1 on failure and 0 on success.
+ */
 int
 arch_insert_inline_st2_tramp(void *addr, void *marker, void *trampoline, void *table_entry)
 {
+  assert(addr != NULL);
+  assert(marker != NULL);
+  assert(trampoline != NULL);
+  assert(table_entry != NULL);
+
   struct inline_st1_base *base = addr;
   struct inline_tramp_st2_entry *entry = table_entry;
+
+  /* TODO make this a compile time assert */
+  assert(sizeof(struct inline_st1_base) ==
+         sizeof(struct inline_st1_tramp));
 
   if (!arch_check_ins(base))
     return 1;
@@ -109,7 +176,7 @@ arch_insert_inline_st2_tramp(void *addr, void *marker, void *trampoline, void *t
      * NOPS. If its 7, we'll land directly on the next instruction.
      */
     default_inline_st2_tramp.jmp_displacement = (addr + sizeof(*base)) -
-                                                 (table_entry + sizeof(default_inline_st2_tramp));
+                                                (table_entry + sizeof(default_inline_st2_tramp));
 
     /* write the address of our C level trampoline in to the structure */
     default_inline_st2_tramp.frame.addr = trampoline;
