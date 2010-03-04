@@ -185,7 +185,7 @@ bin_allocate_page()
 static inline GElf_Addr
 get_plt_addr(struct elf_info *info, size_t ndx) {
   assert(info != NULL);
-  return info->base_addr + info->plt_addr + (ndx + 1) * 16;
+  return info->base_addr + info->plt_addr + (ndx + 1) * PLT_ENTRY_SZ;
 }
 
 /*
