@@ -60,6 +60,19 @@ struct elf_info {
   const char *filename;
 };
 
+/* These callback return statuses are used to tell the invoker of the callback
+ * (walk_linkmap) whether to continue walking or bail out.
+ */
+typedef enum {
+  CB_CONTINUE,
+  CB_EXIT,
+} linkmap_cb_status;
+
+/* A callback type that specifies a function that can be fired on each link map
+ * entry.
+ */
+typedef linkmap_cb_status (*linkmap_cb)(struct link_map *, void *);
+
 /*
  * plt_entry - procedure linkage table entry
  *
@@ -490,6 +503,64 @@ find_die(const char *name, Dwarf_Half type)
 }
 
 /*
+ * find_libruby_cb - a callback which attempts to locate libruby in the linkmap
+ *
+ * This callback is fired from walk_linkmap for each item on the linkmap. This
+ * function searchs for libruby and stores data about it in the object passed
+ * through.
+ *
+ * This function return CB_EXIT once libruby is found to terminate the link map
+ * walker. If libruby isn't found, this function returns CB_CONTINUE.
+ */
+static linkmap_cb_status
+find_libruby_cb(struct link_map *map, void *data)
+{
+  struct elf_info *lib = data;
+
+  assert(map != NULL);
+  assert(data != NULL);
+
+  if (strstr(map->l_name, "libruby.so")) {
+    if (lib) {
+      lib->base_addr = (GElf_Addr)map->l_addr;
+      lib->filename = strdup(map->l_name);
+    }
+    libruby = 1;
+    return CB_EXIT;
+  }
+  return CB_CONTINUE;
+}
+
+/*
+ * walk_linkmap - walk the linkmap firing a callback along the way.
+ *
+ * Given:
+ *  - cb - a callback function
+ *  - data - and any private data to pass through (optional)
+ *
+ * This function will crawl the linkmap and fire the callback on each item
+ * found.
+ *
+ * If the callback returns CB_CONTINUE, this function will move to the next
+ * (if any) item in the link map.
+ *
+ * If the callback returns CB_EXIT, this function will return immediately.
+ */
+static void
+walk_linkmap(linkmap_cb cb, void *data)
+{
+  struct link_map *map = _r_debug.r_map;
+
+  while (map) {
+    if (cb(map, data) == CB_EXIT)
+      break;
+    map = map->l_next;
+  }
+
+  return;
+}
+
+/*
  * has_libruby - check if this ruby binary is linked against libruby.so
  *
  * This function checks if the curreny binary is linked against libruby. If
@@ -500,21 +571,8 @@ find_die(const char *name, Dwarf_Half type)
 static int
 has_libruby(struct elf_info *lib)
 {
-  struct link_map *map = _r_debug.r_map;
-
   libruby = 0;
-  while (map) {
-    if (strstr(map->l_name, "libruby.so")) {
-      if (lib) {
-        lib->base_addr = (GElf_Addr)map->l_addr;
-        lib->filename = strdup(map->l_name);
-      }
-      libruby = 1;
-      break;
-    }
-    map = map->l_next;
-  }
-
+  walk_linkmap(find_libruby_cb, lib);
   return libruby;
 }
 
