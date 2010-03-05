@@ -189,6 +189,8 @@ when 'i486'
 end
 add_define "_ARCH_#{arch}_"
 
+add_define "_MEMPROF_DEBUG" if ENV['MEMPROF_DEBUG'] == '1'
+
 if is_elf or is_macho
   create_makefile('memprof')
 else
