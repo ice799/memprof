@@ -6,6 +6,7 @@
 
 #include "arch.h"
 #include "x86_gen.h"
+#include "util.h"
 
 /*
  * inline_st1_tramp - inline stage 1 trampoline
@@ -124,8 +125,7 @@ arch_insert_inline_st2_tramp(void *addr, void *marker, void *trampoline, void *t
   struct inline_st1_base *base = addr;
   struct inline_tramp_st2_entry *entry = table_entry;
 
-  /* TODO make this a compile time assert */
-  assert(sizeof(struct inline_st1_base) ==
+  ASSERT_ON_COMPILE(sizeof(struct inline_st1_base) ==
          sizeof(struct inline_st1_tramp));
 
   if (!arch_check_ins(base))
