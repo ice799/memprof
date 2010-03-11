@@ -4,14 +4,6 @@
 #include <stdint.h>
 
 /*
- * Instead of getting the pagesize from sysconf over and over again, pollute
- * the global namespace with a dangerous name.
- *
- * XXX change this
- */
-extern size_t pagesize;
-
-/*
  * Some useful foward declarations for function protoypes here and elsewhere.
  */
 struct tramp_st2_entry;

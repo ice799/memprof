@@ -27,6 +27,7 @@ struct memprof_config {
   size_t sizeof_heaps_slot;
   int offset_heaps_slot_limit;
   int offset_heaps_slot_slot;
+  size_t pagesize;
 };
 
 #endif
