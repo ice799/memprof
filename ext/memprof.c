@@ -473,6 +473,16 @@ obj_dump(VALUE obj, yajl_gen gen)
       }
       break;
 
+    case T_STRUCT:
+      yajl_gen_cstr(gen, "struct");
+
+      yajl_gen_cstr(gen, "class");
+      yajl_gen_value(gen, RBASIC(obj)->klass);
+
+      yajl_gen_cstr(gen, "class_name");
+      yajl_gen_cstr(gen, rb_obj_classname(obj));
+      break;
+
     case T_FILE:
       yajl_gen_cstr(gen, "file");
       break;
