@@ -30,4 +30,11 @@ struct memprof_config {
   size_t pagesize;
 };
 
+/* This is the CRC function used by GNU. Stripped executables may contain a
+ * section .gnu_debuglink which holds the name of an elf object with debug
+ * information and a checksum.
+ */
+unsigned long
+gnu_debuglink_crc32 (unsigned long crc, unsigned char *buf, size_t len);
+
 #endif
