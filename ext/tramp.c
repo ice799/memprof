@@ -11,6 +11,7 @@
 
 #include "arch.h"
 #include "bin_api.h"
+#include "util.h"
 
 #define FREELIST_INLINES 3
 
@@ -27,6 +28,8 @@ static size_t tramp_size;
  */
 static size_t inline_tramp_size;
 static struct inline_tramp_st2_entry *inline_tramp_table;
+
+extern struct memprof_config memprof_config;
 
 void
 create_tramp_table()
@@ -64,31 +67,22 @@ hook_freelist(int entry, void *tramp)
   unsigned char *byte = NULL;
   int i = 0, tramps_completed = 0;
 
-  freelist_inliners[0] = bin_find_symbol("gc_sweep", &sizes[0]);
-  /*
-   * Sometimes gc_sweep gets inlined in garbage_collect
-   * (e.g., on REE it gets inlined into garbage_collect_0).
-   */
-  if (!freelist_inliners[0])
-    freelist_inliners[0] = bin_find_symbol("garbage_collect_0", &sizes[0]);
-  if (!freelist_inliners[0])
-    freelist_inliners[0] = bin_find_symbol("garbage_collect", &sizes[0]);
-  if (!freelist_inliners[0]) {
-    /* couldn't find anything containing gc_sweep. */
-    errx(EX_SOFTWARE, "Couldn't find gc_sweep or garbage_collect!");
-  }
+  assert(memprof_config.gc_sweep != NULL);
+  assert(memprof_config.finalize_list != NULL);
+  assert(memprof_config.rb_gc_force_recycle != NULL);
+  assert(memprof_config.freelist != NULL);
+  assert(memprof_config.gc_sweep_size > 0);
+  assert(memprof_config.finalize_list_size > 0);
+  assert(memprof_config.rb_gc_force_recycle_size > 0);
 
-  freelist_inliners[1] = bin_find_symbol("finalize_list", &sizes[1]);
-  if (!freelist_inliners[1])
-    errx(EX_SOFTWARE, "Couldn't find finalize_list!");
+  freelist_inliners[0] = memprof_config.gc_sweep;
+  freelist_inliners[1] = memprof_config.finalize_list;
+  freelist_inliners[2] = memprof_config.rb_gc_force_recycle;
+  sizes[0] = memprof_config.gc_sweep_size;
+  sizes[1] = memprof_config.finalize_list_size;
+  sizes[2] = memprof_config.rb_gc_force_recycle_size;
 
-  freelist_inliners[2] = bin_find_symbol("rb_gc_force_recycle", &sizes[2]);
-  if (!freelist_inliners[2])
-    errx(EX_SOFTWARE, "Couldn't find rb_gc_force_recycle!");
-
-  freelist = bin_find_symbol("freelist", NULL);
-  if (!freelist)
-    errx(EX_SOFTWARE, "Couldn't find freelist!");
+  freelist = memprof_config.freelist;
 
   /* start the search for places to insert the inline tramp */
   byte = freelist_inliners[i];
