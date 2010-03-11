@@ -8,9 +8,11 @@
 #include <dwarf.h>
 #include <err.h>
 #include <error.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <libdwarf.h>
 #include <libelf/gelf.h>
+#include <libgen.h>
 #include <limits.h>
 #include <link.h>
 #include <stdio.h>
@@ -20,9 +22,17 @@
 #include <unistd.h>
 
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+extern struct memprof_config memprof_config;
 
 /* The size of a PLT entry */
 #define PLT_ENTRY_SZ  (16)
+
+/* The system-wide debug symbol directory */
+/* XXX this should be set via extconf and not hardcoded */
+#define DEBUGDIR   "/usr/lib/debug"
 
 /* Keep track of whether this ruby is built with a shared library or not */
 static int libruby = 0;
@@ -50,6 +60,10 @@ struct elf_info {
   size_t plt_size;
   size_t plt_count;
 
+  GElf_Addr debuglink_addr;
+  size_t debuglink_sz;
+  Elf_Data *debuglink_data;
+
   GElf_Ehdr ehdr;
 
   Elf_Data *dynsym;
@@ -60,6 +74,8 @@ struct elf_info {
   Elf_Data *symtab_data;
 
   const char *filename;
+
+  struct elf_info *debug_data;
 };
 
 /* These callback return statuses are used to tell the invoker of the callback
@@ -76,7 +92,7 @@ typedef enum {
 typedef linkmap_cb_status (*linkmap_cb)(struct link_map *, void *);
 
 static void open_elf(struct elf_info *info);
-static int dissect_elf(struct elf_info *info);
+static int dissect_elf(struct elf_info *info, int find_debug);
 static void *find_plt_addr(const char *symname, struct elf_info *info);
 static void walk_linkmap(linkmap_cb cb, void *data);
 
@@ -165,26 +181,31 @@ hook_func_cb(struct link_map *map, void *data)
   }
 
   memset(&curr_lib, 0, sizeof(curr_lib));
-  dbg_printf("trying: %s, %zd\n", map->l_name, strlen(map->l_name));
+  dbg_printf("trying to open elf object: %s\n", map->l_name);
   curr_lib.filename = map->l_name;
   open_elf(&curr_lib);
 
   if (curr_lib.elf == NULL) {
+    dbg_printf("opening the elf object (%s) failed! (skipping)\n", map->l_name);
     return CB_CONTINUE;
   }
 
   curr_lib.base_addr = map->l_addr;
   curr_lib.filename = map->l_name;
-  if (dissect_elf(&curr_lib) == 2) {
+
+  if (dissect_elf(&curr_lib, 0) == 2) {
     dbg_printf("elf file, %s hit an unrecoverable error (skipping)\n", map->l_name);
+    elf_end(curr_lib.elf);
+    close(curr_lib.fd);
     return CB_CONTINUE;
   }
 
-  dbg_printf("dissected the elf file: %s, base: %p\n", curr_lib.filename, curr_lib.base_addr);
+  dbg_printf("dissected the elf file: %s, base: %lx\n",
+      curr_lib.filename, (unsigned long)curr_lib.base_addr);
+
   if ((trampee_addr = find_plt_addr(hook_data->sym, &curr_lib)) != NULL) {
     dbg_printf("found: %s @ %p\n", hook_data->sym, trampee_addr);
     overwrite_got(trampee_addr, hook_data->tramp);
-    dbg_printf("overwrote, supposedly.\n");
   }
 
   elf_end(curr_lib.elf);
@@ -273,7 +294,7 @@ bin_allocate_page()
 static inline GElf_Addr
 get_plt_addr(struct elf_info *info, size_t ndx) {
   assert(info != NULL);
-  dbg_printf("file: %s, base: %p\n", info->filename, info->base_addr);
+  dbg_printf("file: %s, base: %lx\n", info->filename, (unsigned long)info->base_addr);
   return info->base_addr + info->plt_addr + (ndx + 1) * PLT_ENTRY_SZ;
 }
 
@@ -366,9 +387,7 @@ do_bin_find_symbol(const char *sym, size_t *size, struct elf_info *elf)
 
     name = elf_strptr(elf->elf, elf->symtab_shdr.sh_link, (size_t)esym->st_name);
 
-    assert(name != NULL);
-
-    if (strcmp(name, sym) == 0) {
+    if (name && strcmp(name, sym) == 0) {
       if (size) {
         *size = esym->st_size;
       }
@@ -432,7 +451,9 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp)
   }
 
   if (strcmp("rb_newobj", trampee) == 0) {
+    dbg_printf("Trying to hook rb_newobj in other libraries...\n");
     hook_required_objects(tramp->addr);
+    dbg_printf("Done searching other libraries for rb_newobj!\n");
   }
 
   return 0;
@@ -601,7 +622,8 @@ find_libruby_cb(struct link_map *map, void *data)
   assert(map != NULL);
   assert(data != NULL);
 
-  if (strstr(map->l_name, "libruby.so")) {
+  if (strstr(map->l_name, "libruby")) {
+    dbg_printf("Found a libruby.so!\n");
     if (lib) {
       lib->base_addr = (GElf_Addr)map->l_addr;
       lib->filename = strdup(map->l_name);
@@ -632,7 +654,10 @@ walk_linkmap(linkmap_cb cb, void *data)
 {
   struct link_map *map = _r_debug.r_map;
 
+  assert(map);
+
   while (map) {
+    dbg_printf("Found a linkmap entry: %s\n", map->l_name);
     if (cb(map, data) == CB_EXIT)
       break;
     map = map->l_next;
@@ -737,6 +762,110 @@ open_elf(struct elf_info *info)
   return;
 }
 
+static char *
+get_debuglink_info(struct elf_info *elf, unsigned long *crc_out)
+{
+  char *basename = (char *) elf->debuglink_data->d_buf;
+  unsigned long offset = strlen(basename) + 1;
+  offset = (offset + 3) & ~3;
+
+  memcpy(crc_out, elf->debuglink_data->d_buf + offset, 4);
+
+  return basename;
+}
+
+static int
+verify_debug_checksum(const char *filename, unsigned long crc)
+{
+  struct stat stat_buf;
+  void *region = NULL;
+  int fd = open(filename, O_RDONLY);
+  unsigned long crc_check = 0;
+
+  if (fd == -1) {
+    dbg_printf("Couldn't open debug file: %s, because: %s\n", filename, strerror(errno));
+    return 1;
+  }
+
+  if (fstat(fd, &stat_buf) == -1) {
+    dbg_printf("Couldn't stat debug file: %s, because: %s\n", filename, strerror(errno));
+    return 1;
+  }
+
+  region = mmap(NULL, stat_buf.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+  if (region == MAP_FAILED) {
+    dbg_printf("mapping a section of size: %zd has failed!\n", stat_buf.st_size);
+    return 1;
+  }
+
+  crc_check = gnu_debuglink_crc32(crc_check, region, stat_buf.st_size);
+  dbg_printf("supposed crc: %lx, computed crc:  %lx\n", crc, crc_check);
+
+  munmap(region, stat_buf.st_size);
+  close(fd);
+
+  return !(crc == crc_check);
+}
+
+static int
+find_debug_syms(struct elf_info *elf)
+{
+  /*
+   * XXX TODO perhaps allow users to specify an env var (or something) pointing
+   * to where the debug symbols live?
+   */
+  unsigned long crc = 0;
+  char *basename = get_debuglink_info(elf, &crc);
+  char *debug_file = NULL, *dir = NULL;
+  char *tmp = strdup(elf->filename);
+
+  assert(basename != NULL);
+  dbg_printf(".gnu_debuglink base file name: %s, crc: %lx\n", basename, crc);
+
+  dir = dirname(tmp);
+  debug_file = malloc(strlen(DEBUGDIR) + strlen(dir) +
+                      strlen("/") + strlen(basename) + 1);
+
+  strncat(debug_file, DEBUGDIR, strlen(DEBUGDIR));
+  strncat(debug_file, dir, strlen(dir));
+  strncat(debug_file, "/", strlen("/"));
+  strncat(debug_file, basename, strlen(basename));
+
+  elf->debug_data = calloc(1, sizeof(*elf->debug_data));
+  elf->debug_data->filename = debug_file;
+
+  dbg_printf("Possible debug symbols in: %s\n", elf->debug_data->filename);
+
+  if (verify_debug_checksum(elf->debug_data->filename, crc)) {
+    dbg_printf("Checksum verification of debug file: %s failed!", elf->debug_data->filename);
+    free(debug_file);
+    free(elf->debug_data);
+    return 1;
+  }
+
+  open_elf(elf->debug_data);
+
+  if (dissect_elf(elf->debug_data, 0) != 0) {
+    /* free debug_data */
+    dbg_printf("Dissection of debug data failed!\n");
+    free(debug_file);
+    free(elf->debug_data);
+    return 1;
+  }
+
+  elf->symtab_data = elf->debug_data->symtab_data;
+  elf->symtab_shdr = elf->debug_data->symtab_shdr;
+
+  /* XXX free stuff */
+
+  elf_end(elf->elf);
+  elf->elf = elf->debug_data->elf;
+  close(elf->debug_data->fd);
+
+  dbg_printf("Finished dissecting debug data\n");
+  return 0;
+}
+
 /*
  * dissect_elf - Parses and stores internal data about an ELF object.
  *
@@ -750,7 +879,7 @@ open_elf(struct elf_info *info)
  * Returns 0 on success.
  */
 static int
-dissect_elf(struct elf_info *info)
+dissect_elf(struct elf_info *info, int find_debug)
 {
   assert(info != NULL);
 
@@ -852,9 +981,21 @@ dissect_elf(struct elf_info *info)
      * Pull out information (start address) of the .plt section.
      */
     else if (shdr.sh_type == SHT_PROGBITS) {
-	    if (strcmp(elf_strptr(elf, shstrndx, shdr.sh_name), ".plt") == 0) {
-		    info->plt_addr = shdr.sh_addr;
-	    }
+      if (strcmp(elf_strptr(elf, shstrndx, shdr.sh_name), ".plt") == 0) {
+        info->plt_addr = shdr.sh_addr;
+      } else if (strcmp(elf_strptr(elf, shstrndx, shdr.sh_name), ".gnu_debuglink") == 0) {
+        info->debuglink_addr = shdr.sh_addr;
+        info->debuglink_sz = shdr.sh_size;
+        dbg_printf("address: %lx, size: %zd\n", shdr.sh_addr, shdr.sh_size);
+
+       if ((info->debuglink_data = elf_getdata(scn, NULL)) == NULL ||
+           info->debuglink_data->d_size == 0) {
+          dbg_printf(".gnu_debuglink section existed, but wasn't readable.\n");
+          ret = 2;
+          goto out;
+       }
+       dbg_printf("size: %zd\n", shdr.sh_size);
+      }
     }
     /*
      * The symbol table is also needed for bin_find_symbol
@@ -866,6 +1007,7 @@ dissect_elf(struct elf_info *info)
         dbg_printf("shared lib has a broken symbol table. Is it stripped? "
                    "memprof only works on shared libs that are not stripped!\n");
         ret = 2;
+        goto out;
       }
     }
   }
@@ -901,6 +1043,9 @@ dissect_elf(struct elf_info *info)
   }
 
 out:
+  if (find_debug && ret == 1) {
+    find_debug_syms(info);
+  }
   return ret;
 }
 
@@ -915,6 +1060,9 @@ bin_init()
 {
   Dwarf_Error dwrf_err;
 
+  ASSERT_ON_COMPILE(sizeof(unsigned long) == sizeof(GElf_Addr));
+  ASSERT_ON_COMPILE(sizeof(unsigned long) == sizeof(Elf64_Addr));
+
   ruby_info = calloc(1, sizeof(*ruby_info));
 
   if (!ruby_info) {
@@ -922,18 +1070,26 @@ bin_init()
   }
 
   if (!has_libruby(ruby_info)) {
-    ruby_info->filename = "/proc/self/exe";
+    dbg_printf("This ruby binary has no libruby\n");
+    char *filename = calloc(1, 255);
+    if (readlink("/proc/self/exe", filename, 255) == -1) {
+      errx(EX_UNAVAILABLE, "Unable to follow /proc/self/exe symlink: %s", strerror(errno));
+    }
+    ruby_info->filename = filename;
     ruby_info->base_addr = 0;
+    dbg_printf("The path to the binary is: %s\n", ruby_info->filename);
   }
 
   open_elf(ruby_info);
 
-  if (dissect_elf(ruby_info) != 0) {
-    errx(EX_DATAERR, "Error trying to part elf file: %s\n", ruby_info->filename);
+  if (dissect_elf(ruby_info, 1) == 2) {
+    errx(EX_DATAERR, "Error trying to parse elf file: %s\n", ruby_info->filename);
   }
 
   if (dwarf_elf_init(ruby_info->elf, DW_DLC_READ, NULL, NULL, &dwrf, &dwrf_err) != DW_DLV_OK) {
     errx(EX_DATAERR, "unable to read debugging data from binary. was it compiled with -g? is it unstripped?");
   }
+
+  dbg_printf("bin_init finished\n");
 }
 #endif

@@ -827,15 +827,17 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   return Qnil;
 }
 
-void
-init_memprof_config() {
-  memset(&memprof_config, 0, sizeof(struct memprof_config));
+static void
+init_memprof_config_base() {
+  memset(&memprof_config, 0, sizeof(memprof_config));
   memprof_config.offset_heaps_slot_limit = -1;
   memprof_config.offset_heaps_slot_slot = -1;
-
   memprof_config.pagesize = getpagesize();
   assert(memprof_config.pagesize);
+}
 
+static void
+init_memprof_config_extended() {
   /* If we don't have add_freelist, find the functions it gets inlined into */
   memprof_config.add_freelist               = bin_find_symbol("add_freelist", NULL);
 
@@ -953,15 +955,13 @@ init_memprof_config() {
     /* who knows what could happen */
     if (TYPE(ruby_build_info) == T_STRING)
       fprintf(stderr, "%s\n", StringValuePtr(ruby_build_info));
-    errx(EX_SOFTWARE, "Memprof does not have enough data to run. Please email this output to Memprof dudes.");
+    errx(EX_SOFTWARE, "Memprof does not have enough data to run. Please email this output to bugs@memprof.com");
   }
 }
 
 void
 Init_memprof()
 {
-  init_memprof_config();
-
   VALUE memprof = rb_define_module("Memprof");
   eUnsupported = rb_define_class_under(memprof, "Unsupported", rb_eStandardError);
   rb_define_singleton_method(memprof, "start", memprof_start, 0);
@@ -973,7 +973,9 @@ Init_memprof()
   rb_define_singleton_method(memprof, "dump_all", memprof_dump_all, -1);
 
   objs = st_init_numtable();
+  init_memprof_config_base();
   bin_init();
+  init_memprof_config_extended();
   create_tramp_table();
 
   gc_hook = Data_Wrap_Struct(rb_cObject, sourcefile_marker, NULL, NULL);
