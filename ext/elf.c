@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 #include "bin_api.h"
 #include "arch.h"
+#include "util.h"
 
 #include <assert.h>
 #include <dwarf.h>
@@ -32,6 +33,7 @@ static Dwarf_Debug dwrf = NULL;
 static struct elf_info *ruby_info = NULL;
 
 struct elf_info {
+  int fd;
   Elf *elf;
 
   GElf_Addr base_addr;
@@ -72,6 +74,11 @@ typedef enum {
  * entry.
  */
 typedef linkmap_cb_status (*linkmap_cb)(struct link_map *, void *);
+
+static void open_elf(struct elf_info *info);
+static int dissect_elf(struct elf_info *info);
+static void *find_plt_addr(const char *symname, struct elf_info *info);
+static void walk_linkmap(linkmap_cb cb, void *data);
 
 /*
  * plt_entry - procedure linkage table entry
@@ -119,11 +126,79 @@ get_got_addr(struct plt_entry *plt)
  * in the GOT that the PLT entry uses with the address in tramp.
  */
 static void
-overwrite_got(void *plt, void *tramp)
+overwrite_got(void *plt, const void *tramp)
 {
   assert(plt != NULL);
   assert(tramp != NULL);
   memcpy(get_got_addr(plt), &tramp, sizeof(void *));
+  return;
+}
+
+struct plt_hook_data {
+  const char *sym;
+  const void *tramp;
+};
+
+linkmap_cb_status
+hook_func_cb(struct link_map *map, void *data)
+{
+  struct plt_hook_data *hook_data = data;
+  struct elf_info curr_lib;
+  void *trampee_addr = NULL;
+
+  /* skip a few things we don't care about */
+  if (strstr(map->l_name, "linux-vdso")) {
+    dbg_printf("found vdso (skipping): %s\n", map->l_name);
+    return CB_CONTINUE;
+  } else if (strstr(map->l_name, "ld-linux")) {
+    dbg_printf("found ld-linux (skipping): %s\n", map->l_name);
+    return CB_CONTINUE;
+  } else if (strstr(map->l_name, "libruby")) {
+    dbg_printf("found libruby (skipping): %s\n", map->l_name);
+    return CB_CONTINUE;
+  } else if (strstr(map->l_name, "memprof")) {
+    dbg_printf("found memprof (skipping): %s\n", map->l_name);
+    return CB_CONTINUE;
+  } else if (!map->l_name || map->l_name[0] == '\0') {
+    dbg_printf("found an empty string (skipping)\n");
+    return CB_CONTINUE;
+  }
+
+  memset(&curr_lib, 0, sizeof(curr_lib));
+  dbg_printf("trying: %s, %zd\n", map->l_name, strlen(map->l_name));
+  curr_lib.filename = map->l_name;
+  open_elf(&curr_lib);
+
+  if (curr_lib.elf == NULL) {
+    return CB_CONTINUE;
+  }
+
+  curr_lib.base_addr = map->l_addr;
+  curr_lib.filename = map->l_name;
+  if (dissect_elf(&curr_lib) == 2) {
+    dbg_printf("elf file, %s hit an unrecoverable error (skipping)\n", map->l_name);
+    return CB_CONTINUE;
+  }
+
+  dbg_printf("dissected the elf file: %s, base: %p\n", curr_lib.filename, curr_lib.base_addr);
+  if ((trampee_addr = find_plt_addr(hook_data->sym, &curr_lib)) != NULL) {
+    dbg_printf("found: %s @ %p\n", hook_data->sym, trampee_addr);
+    overwrite_got(trampee_addr, hook_data->tramp);
+    dbg_printf("overwrote, supposedly.\n");
+  }
+
+  elf_end(curr_lib.elf);
+  close(curr_lib.fd);
+  return CB_CONTINUE;
+}
+
+static void
+hook_required_objects(void *tramp)
+{
+  struct plt_hook_data data;
+  data.sym = "rb_newobj";
+  data.tramp = tramp;
+  walk_linkmap(hook_func_cb, &data);
   return;
 }
 
@@ -198,6 +273,7 @@ bin_allocate_page()
 static inline GElf_Addr
 get_plt_addr(struct elf_info *info, size_t ndx) {
   assert(info != NULL);
+  dbg_printf("file: %s, base: %p\n", info->filename, info->base_addr);
   return info->base_addr + info->plt_addr + (ndx + 1) * PLT_ENTRY_SZ;
 }
 
@@ -406,6 +482,11 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp)
     assert(trampee_addr != NULL);
     overwrite_got(trampee_addr, tramp->addr);
   }
+
+  if (strcmp("rb_newobj", trampee) == 0) {
+    hook_required_objects(tramp->addr);
+  }
+
   return 0;
 }
 
@@ -685,31 +766,27 @@ bin_type_member_offset(const char *type, const char *member)
  * Given a filename, this function attempts to open the file and start the
  * elf reader.
  *
- * Returns an Elf object.
+ * Returns an elf_info object that must be freed by the caller.
  */
-static Elf *
-open_elf(const char *filename)
+static void
+open_elf(struct elf_info *info)
 {
-  Elf *ret = NULL;
-  int fd = 0;
 
-  assert(filename != NULL);
+  assert(info != NULL);
+
   if (elf_version(EV_CURRENT) == EV_NONE)
-    errx(EX_SOFTWARE, "ELF library initialization failed: %s",
-        elf_errmsg(-1));
+    errx(EX_SOFTWARE, "ELF library initialization failed: %s", elf_errmsg(-1));
 
-  if ((fd = open(filename, O_RDONLY, 0)) < 0)
-    err(EX_NOINPUT, "open \%s\" failed", filename);
+  if ((info->fd = open(info->filename, O_RDONLY, 0)) < 0)
+    err(EX_NOINPUT, "open \%s\" failed", info->filename);
 
-  if ((ret = elf_begin(fd, ELF_C_READ, NULL)) == NULL)
-    errx(EX_SOFTWARE, "elf_begin() failed: %s.",
-        elf_errmsg(-1));
+  if ((info->elf = elf_begin(info->fd, ELF_C_READ, NULL)) == NULL)
+    errx(EX_SOFTWARE, "elf_begin() failed: %s.", elf_errmsg(-1));
 
-  if (elf_kind(ret) != ELF_K_ELF)
-    errx(EX_DATAERR, "%s is not an ELF object.", filename);
+  if (elf_kind(info->elf) != ELF_K_ELF)
+    errx(EX_DATAERR, "%s is not an ELF object.", info->filename);
 
-  assert(ret != NULL);
-  return ret;
+  return;
 }
 
 /*
@@ -717,32 +794,43 @@ open_elf(const char *filename)
  *
  * Given an elf_info structure, this function will attempt to parse the object
  * and store important state needed to rewrite the object later.
+ *
+ * TODO better error handling
+ *
+ * Returns 1 on hard errors.
+ * Returns 2 on recoverable errors (missing symbol table).
+ * Returns 0 on success.
  */
-static void
+static int
 dissect_elf(struct elf_info *info)
 {
   assert(info != NULL);
 
-  size_t shstrndx = 0;
+  size_t shstrndx = 0, j = 0;
   Elf *elf = info->elf;
   Elf_Scn *scn = NULL;
   GElf_Shdr shdr;
-  size_t j = 0;
+  int ret = 0;
 
   if (elf_getshdrstrndx(elf, &shstrndx) == -1) {
-    errx(EX_SOFTWARE, "getshstrndx() failed: %s.", elf_errmsg(-1));
+    dbg_printf("getshstrndx() failed: %s.", elf_errmsg(-1));
+    ret = 1;
+    goto out;
   }
 
   if (gelf_getehdr(elf, &(info->ehdr)) == NULL) {
-    errx(EX_SOFTWARE, "Couldn't get elf header.");
+    dbg_printf("Couldn't get elf header.");
+    ret = 1;
+    goto out;
   }
 
   /* search each ELF header and store important data for each header... */
   while ((scn = elf_nextscn(elf, scn)) != NULL) {
-    if (gelf_getshdr(scn, &shdr) != &shdr)
-      errx(EX_SOFTWARE, "getshdr() failed: %s.",
-          elf_errmsg(-1));
-
+    if (gelf_getshdr(scn, &shdr) != &shdr) {
+      dbg_printf("getshdr() failed: %s.", elf_errmsg(-1));
+      ret = 1;
+      goto out;
+    }
 
     /*
      * The .dynamic section contains entries that are important to memprof.
@@ -757,8 +845,9 @@ dissect_elf(struct elf_info *info)
       for (j = 0; j < shdr.sh_size / shdr.sh_entsize; ++j) {
         GElf_Dyn dyn;
         if (gelf_getdyn(data, j, &dyn) == NULL) {
-          error(EXIT_FAILURE, 0,
-              "Couldn't get .dynamic data from loaded library.");
+          dbg_printf("Couldn't get .dynamic data from loaded library.");
+          ret = 1;
+          goto out;
         }
 
         if (dyn.d_tag == DT_JMPREL) {
@@ -778,21 +867,26 @@ dissect_elf(struct elf_info *info)
 
       info->dynsym = elf_getdata(scn, NULL);
       info->dynsym_count = shdr.sh_size / shdr.sh_entsize;
-      if (info->dynsym == NULL
-          || elf_getdata(scn, info->dynsym) != NULL)
-        error(EXIT_FAILURE, 0,
-              "Couldn't get .dynsym data ");
+      if (info->dynsym == NULL || elf_getdata(scn, info->dynsym) != NULL) {
+        dbg_printf("Couldn't get .dynsym data ");
+        ret = 1;
+        goto out;
+      }
 
       scn = elf_getscn(elf, shdr.sh_link);
-      if (scn == NULL || gelf_getshdr(scn, &shdr) == NULL)
-        error(EXIT_FAILURE, 0,
-              "Couldn't get section header from");
+      if (scn == NULL || gelf_getshdr(scn, &shdr) == NULL) {
+        dbg_printf("Couldn't get section header.");
+        ret = 1;
+        goto out;
+      }
 
       data = elf_getdata(scn, NULL);
       if (data == NULL || elf_getdata(scn, data) != NULL
-          || shdr.sh_size != data->d_size || data->d_off)
-        error(EXIT_FAILURE, 0,
-              "Couldn't get .dynstr data");
+          || shdr.sh_size != data->d_size || data->d_off) {
+        dbg_printf("Couldn't get .dynstr data");
+        ret = 1;
+        goto out;
+      }
 
       info->dynstr = data->d_buf;
     }
@@ -821,41 +915,47 @@ dissect_elf(struct elf_info *info)
       info->symtab_shdr = shdr;
       if ((info->symtab_data = elf_getdata(scn, info->symtab_data)) == NULL ||
           info->symtab_data->d_size == 0) {
-        errx(EX_DATAERR, "shared lib has a broken symbol table. Is it stripped? "
-            "memprof only works on shared libs that are not stripped!");
+        dbg_printf("shared lib has a broken symbol table. Is it stripped? "
+                   "memprof only works on shared libs that are not stripped!\n");
+        ret = 2;
       }
     }
   }
 
   /* If this object has no symbol table there's nothing else to do but fail */
   if (!info->symtab_data) {
-    errx(EX_DATAERR, "binary is stripped. memprof only works on binaries that are not stripped!");
+    dbg_printf("binary is stripped. memprof only works on binaries that are not stripped!\n");
+    ret = 1;
   }
-
 
   /*
    * Walk the sections, pull out, and store the .plt section
    */
   for (j = 1; j < info->ehdr.e_shnum; j++) {
     scn =  elf_getscn(elf, j);
-    if (scn == NULL || gelf_getshdr(scn, &shdr) == NULL)
-        error(EXIT_FAILURE, 0,
-              "Couldn't get section header from library.");
+    if (scn == NULL || gelf_getshdr(scn, &shdr) == NULL) {
+      dbg_printf("Couldn't get section header from library.");
+      ret = 1;
+      goto out;
+    }
 
     if (shdr.sh_addr == info->relplt_addr
         && shdr.sh_size == info->plt_size) {
       info->relplt = elf_getdata(scn, NULL);
       info->relplt_count = shdr.sh_size / shdr.sh_entsize;
-      if (info->relplt == NULL
-          || elf_getdata(scn, info->relplt) != NULL)
-        error(EXIT_FAILURE, 0,
-            "Couldn't get .rel*.plt data from");
+      if (info->relplt == NULL || elf_getdata(scn, info->relplt) != NULL) {
+        dbg_printf("Couldn't get .rel*.plt data from");
+        ret = 1;
+        goto out;
+      }
       break;
     }
   }
 
-  return;
+out:
+  return ret;
 }
+
 
 /*
  * bin_init - initialize the binary parsing/modification layer.
@@ -878,8 +978,11 @@ bin_init()
     ruby_info->base_addr = 0;
   }
 
-  ruby_info->elf = open_elf(ruby_info->filename);
-  dissect_elf(ruby_info);
+  open_elf(ruby_info);
+
+  if (dissect_elf(ruby_info) != 0) {
+    errx(EX_DATAERR, "Error trying to part elf file: %s\n", ruby_info->filename);
+  }
 
   if (dwarf_elf_init(ruby_info->elf, DW_DLC_READ, NULL, NULL, &dwrf, &dwrf_err) != DW_DLV_OK) {
     errx(EX_DATAERR, "unable to read debugging data from binary. was it compiled with -g? is it unstripped?");
