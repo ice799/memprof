@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <assert.h>
+#include <err.h>
+#include <sysexits.h>
 
 #include <st.h>
 #include <intern.h>
@@ -19,6 +21,7 @@
 #include "arch.h"
 #include "bin_api.h"
 #include "tramp.h"
+#include "util.h"
 
 
 /*
@@ -27,6 +30,8 @@
 static VALUE eUnsupported;
 static int track_objs = 0;
 static st_table *objs = NULL;
+
+struct memprof_config memprof_config;
 
 struct obj_track {
   VALUE obj;
@@ -843,28 +848,19 @@ memprof_dump(int argc, VALUE *argv, VALUE self)
 static VALUE
 memprof_dump_all(int argc, VALUE *argv, VALUE self)
 {
-  char *heaps = *(char**)bin_find_symbol("heaps",0);
-  int heaps_used = *(int*)bin_find_symbol("heaps_used",0);
+  if (memprof_config.heaps == NULL ||
+      memprof_config.heaps_used == NULL ||
+      memprof_config.sizeof_RVALUE == 0 ||
+      memprof_config.sizeof_heaps_slot == 0 ||
+      memprof_config.offset_heaps_slot_slot == -1 ||
+      memprof_config.offset_heaps_slot_limit == -1)
+    rb_raise(eUnsupported, "not enough config data to dump heap");
 
-#ifndef sizeof__RVALUE
-  size_t sizeof__RVALUE = bin_type_size("RVALUE");
-#endif
-#ifndef sizeof__heaps_slot
-  size_t sizeof__heaps_slot = bin_type_size("heaps_slot");
-#endif
-#ifndef offset__heaps_slot__limit
-  int offset__heaps_slot__limit = bin_type_member_offset("heaps_slot", "limit");
-#endif
-#ifndef offset__heaps_slot__slot
-  int offset__heaps_slot__slot = bin_type_member_offset("heaps_slot", "slot");
-#endif
+  char *heaps = *(char**)memprof_config.heaps;
+  int heaps_used = *(int*)memprof_config.heaps_used;
 
   char *p, *pend;
   int i, limit;
-
-  if (sizeof__RVALUE == 0 || sizeof__heaps_slot == 0)
-    rb_raise(eUnsupported, "could not find internal heap");
-
   VALUE str;
   FILE *out = NULL;
 
@@ -900,9 +896,9 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   yajl_gen_map_close(gen);
 
   for (i=0; i < heaps_used; i++) {
-    p = *(char**)(heaps + (i * sizeof__heaps_slot) + offset__heaps_slot__slot);
-    limit = *(int*)(heaps + (i * sizeof__heaps_slot) + offset__heaps_slot__limit);
-    pend = p + (sizeof__RVALUE * limit);
+    p = *(char**)(heaps + (i * memprof_config.sizeof_heaps_slot) + memprof_config.offset_heaps_slot_slot);
+    limit = *(int*)(heaps + (i * memprof_config.sizeof_heaps_slot) + memprof_config.offset_heaps_slot_limit);
+    pend = p + (memprof_config.sizeof_RVALUE * limit);
 
     while (p < pend) {
       if (RBASIC(p)->flags) {
@@ -914,7 +910,7 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
         while(fputc('\n', out ? out : stdout) == EOF);
       }
 
-      p += sizeof__RVALUE;
+      p += memprof_config.sizeof_RVALUE;
     }
   }
 
@@ -931,8 +927,137 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
 }
 
 void
+init_memprof_config() {
+  memset(&memprof_config, 0, sizeof(struct memprof_config));
+  memprof_config.offset_heaps_slot_limit = -1;
+  memprof_config.offset_heaps_slot_slot = -1;
+
+  /* If we don't have add_freelist, find the functions it gets inlined into */
+  memprof_config.add_freelist               = bin_find_symbol("add_freelist", NULL);
+
+  /*
+   * Sometimes gc_sweep gets inlined in garbage_collect
+   * (e.g., on REE it gets inlined into garbage_collect_0).
+   */
+  if (memprof_config.add_freelist == NULL) {
+    memprof_config.gc_sweep                 = bin_find_symbol("gc_sweep",
+                                                &memprof_config.gc_sweep_size);
+    if (memprof_config.gc_sweep == NULL)
+      memprof_config.gc_sweep               = bin_find_symbol("garbage_collect_0",
+                                                &memprof_config.gc_sweep_size);
+    if (memprof_config.gc_sweep == NULL)
+      memprof_config.gc_sweep               = bin_find_symbol("garbage_collect",
+                                                &memprof_config.gc_sweep_size);
+
+    memprof_config.finalize_list            = bin_find_symbol("finalize_list",
+                                                &memprof_config.finalize_list_size);
+    memprof_config.rb_gc_force_recycle      = bin_find_symbol("rb_gc_force_recycle",
+                                                &memprof_config.rb_gc_force_recycle_size);
+    memprof_config.freelist                 = bin_find_symbol("freelist", NULL);
+  }
+
+  memprof_config.classname                  = bin_find_symbol("classname", NULL);
+  memprof_config.rb_mark_table_add_filename = bin_find_symbol("rb_mark_table_add_filename", NULL);
+
+  /* Stuff for dumping the heap */
+  memprof_config.heaps                      = bin_find_symbol("heaps", NULL);
+  memprof_config.heaps_used                 = bin_find_symbol("heaps_used", NULL);
+#ifdef sizeof__RVALUE
+  memprof_config.sizeof_RVALUE              = sizeof__RVALUE;
+#else
+  memprof_config.sizeof_RVALUE              = bin_type_size("RVALUE");
+#endif
+#ifdef sizeof__heaps_slot
+  memprof_config.sizeof_heaps_slot          = sizeof__heaps_slot;
+#else
+  memprof_config.sizeof_heaps_slot          = bin_type_size("heaps_slot");
+#endif
+#ifdef offset__heaps_slot__limit
+  memprof_config.offset_heaps_slot_limit    = offset__heaps_slot__limit;
+#else
+  memprof_config.offset_heaps_slot_limit    = bin_type_member_offset("heaps_slot", "limit");
+#endif
+#ifdef offset__heaps_slot__slot
+  memprof_config.offset_heaps_slot_slot     = offset__heaps_slot__slot;
+#else
+  memprof_config.offset_heaps_slot_slot     = bin_type_member_offset("heaps_slot", "slot");
+#endif
+
+  int heap_errors_printed = 0;
+
+  if (memprof_config.heaps == NULL)
+    heap_errors_printed += fprintf(stderr,
+      "Failed to locate heaps\n");
+  if (memprof_config.heaps_used == NULL)
+    heap_errors_printed += fprintf(stderr,
+      "Failed to locate heaps_used\n");
+  if (memprof_config.sizeof_RVALUE == 0)
+    heap_errors_printed += fprintf(stderr,
+      "Failed to determine sizeof(RVALUE)\n");
+  if (memprof_config.sizeof_heaps_slot == 0)
+    heap_errors_printed += fprintf(stderr,
+      "Failed to determine sizeof(heaps_slot)\n");
+  if (memprof_config.offset_heaps_slot_limit == -1)
+    heap_errors_printed += fprintf(stderr,
+      "Failed to determine offset of heaps_slot->limit\n");
+  if (memprof_config.offset_heaps_slot_slot == -1)
+    heap_errors_printed += fprintf(stderr,
+      "Failed to determine offset of heaps_slot->slot\n");
+
+  if (heap_errors_printed)
+    fprintf(stderr, "You won't be able to dump your heap!\n");
+
+  int errors_printed = 0;
+
+  /* If we can't find add_freelist, we need to make sure we located the functions that it gets inlined into. */
+  if (memprof_config.add_freelist == NULL) {
+    if (memprof_config.gc_sweep == NULL) {
+      errors_printed += fprintf(stderr,
+        "Failed to locate add_freelist (it's probably inlined, but we couldn't find it there either!)\n");
+      errors_printed += fprintf(stderr,
+        "Failed to locate gc_sweep, garbage_collect_0, or garbage_collect\n");
+    }
+    if (memprof_config.gc_sweep_size == 0)
+      errors_printed += fprintf(stderr,
+        "Failed to determine the size of gc_sweep/garbage_collect_0/garbage_collect: %ld\n",
+        memprof_config.gc_sweep_size);
+    if (memprof_config.finalize_list == NULL)
+      errors_printed += fprintf(stderr,
+        "Failed to locate finalize_list\n");
+    if (memprof_config.finalize_list_size == 0)
+      errors_printed += fprintf(stderr,
+        "Failed to determine the size of finalize_list: %ld\n",
+        memprof_config.finalize_list_size);
+    if (memprof_config.rb_gc_force_recycle == NULL)
+      errors_printed += fprintf(stderr,
+        "Failed to locate rb_gc_force_recycle\n");
+    if (memprof_config.rb_gc_force_recycle_size == 0)
+      errors_printed += fprintf(stderr,
+        "Failed to determine the size of rb_gc_force_recycle: %ld\n",
+        memprof_config.rb_gc_force_recycle_size);
+    if (memprof_config.freelist == NULL)
+      errors_printed += fprintf(stderr,
+        "Failed to locate freelist\n");
+  }
+
+  if (memprof_config.classname == NULL)
+    errors_printed += fprintf(stderr,
+      "Failed to locate classname\n");
+
+  if (errors_printed) {
+    VALUE ruby_build_info = rb_eval_string("require 'rbconfig'; RUBY_DESCRIPTION + '\n' + RbConfig::CONFIG['CFLAGS'];");
+    /* who knows what could happen */
+    if (TYPE(ruby_build_info) == T_STRING)
+      fprintf(stderr, "%s\n", StringValuePtr(ruby_build_info));
+    errx(EX_SOFTWARE, "Memprof does not have enough data to run. Please email this output to Memprof dudes.");
+  }
+}
+
+void
 Init_memprof()
 {
+  init_memprof_config();
+
   VALUE memprof = rb_define_module("Memprof");
   eUnsupported = rb_define_class_under(memprof, "Unsupported", rb_eStandardError);
   rb_define_singleton_method(memprof, "start", memprof_start, 0);
@@ -950,10 +1075,12 @@ Init_memprof()
 
   gc_hook = Data_Wrap_Struct(rb_cObject, sourcefile_marker, NULL, NULL);
   rb_global_variable(&gc_hook);
-  ptr_to_rb_mark_table_add_filename = bin_find_symbol("rb_mark_table_add_filename", NULL);
 
-  rb_classname = bin_find_symbol("classname", 0);
-  rb_add_freelist = bin_find_symbol("add_freelist", 0);
+  rb_classname = memprof_config.classname;
+  rb_add_freelist = memprof_config.add_freelist;
+  ptr_to_rb_mark_table_add_filename = memprof_config.rb_mark_table_add_filename;
+
+  assert(rb_classname);
 
   insert_tramp("rb_newobj", newobj_tramp);
   insert_tramp("add_freelist", freelist_tramp);
