@@ -154,10 +154,10 @@ do_bin_allocate_page(struct elf_info *info)
      * a page.
      */
     addr = info->text_segment + info->text_segment_len;
-    for (; count < UINT_MAX; addr += pagesize, count += pagesize) {
-      ret = mmap(addr, pagesize, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_ANON|MAP_PRIVATE, -1, 0);
+    for (; count < UINT_MAX; addr += memprof_config.pagesize, count += memprof_config.pagesize) {
+      ret = mmap(addr, memprof_config.pagesize, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_ANON|MAP_PRIVATE, -1, 0);
       if (ret != MAP_FAILED) {
-        memset(ret, 0x90, pagesize);
+        memset(ret, 0x90, memprof_config.pagesize);
         return ret;
       }
     }
@@ -166,7 +166,7 @@ do_bin_allocate_page(struct elf_info *info)
      * grab a page in the lower 4gb of the address space.
      */
     assert((size_t)info->text_segment <= UINT_MAX);
-    return mmap(NULL, pagesize, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_ANON|MAP_PRIVATE|MAP_32BIT, -1, 0);
+    return mmap(NULL, memprof_config.pagesize, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_ANON|MAP_PRIVATE|MAP_32BIT, -1, 0);
   }
 
   return NULL;

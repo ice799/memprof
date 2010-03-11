@@ -932,6 +932,9 @@ init_memprof_config() {
   memprof_config.offset_heaps_slot_limit = -1;
   memprof_config.offset_heaps_slot_slot = -1;
 
+  memprof_config.pagesize = getpagesize();
+  assert(memprof_config.pagesize);
+
   /* If we don't have add_freelist, find the functions it gets inlined into */
   memprof_config.add_freelist               = bin_find_symbol("add_freelist", NULL);
 
@@ -1068,7 +1071,6 @@ Init_memprof()
   rb_define_singleton_method(memprof, "dump", memprof_dump, -1);
   rb_define_singleton_method(memprof, "dump_all", memprof_dump_all, -1);
 
-  pagesize = getpagesize();
   objs = st_init_numtable();
   bin_init();
   create_tramp_table();

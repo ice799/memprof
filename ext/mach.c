@@ -2,6 +2,7 @@
 
 #include "bin_api.h"
 #include "arch.h"
+#include "util.h"
 
 #include <limits.h>
 #include <string.h>
@@ -17,6 +18,8 @@
 #include <mach-o/loader.h>
 #include <mach-o/ldsyms.h>
 #include <mach-o/nlist.h>
+
+extern struct memprof_config memprof_config;
 
 /*
  * The jmp instructions in the dyld stub table are 6 bytes,
@@ -471,12 +474,12 @@ bin_allocate_page()
   void *ret = NULL;
   size_t i = 0;
 
-  for (i = pagesize; i < INT_MAX - pagesize; i += pagesize) {
-    ret = mmap((void*)(NULL + i), pagesize, PROT_WRITE|PROT_READ|PROT_EXEC,
+  for (i = memprof_config.pagesize; i < INT_MAX - memprof_config.pagesize; i += memprof_config.pagesize) {
+    ret = mmap((void*)(NULL + i), memprof_config.pagesize, PROT_WRITE|PROT_READ|PROT_EXEC,
                MAP_ANON|MAP_PRIVATE, -1, 0);
 
     if (ret != MAP_FAILED) {
-      memset(ret, 0x90, pagesize);
+      memset(ret, 0x90, memprof_config.pagesize);
       return ret;
     }
   }

@@ -15,8 +15,6 @@
 
 #define FREELIST_INLINES 3
 
-size_t pagesize;
-
 /*
  * trampoline specific stuff
  */
@@ -47,13 +45,13 @@ create_tramp_table()
     errx(EX_SOFTWARE, "Failed to allocate memory for stage 1 trampolines.");
 
   tramp_table = region;
-  inline_tramp_table = region + pagesize / 2;
+  inline_tramp_table = region + memprof_config.pagesize / 2;
 
-  for (i = 0; i < (pagesize / 2) / tramp_sz; i++) {
+  for (i = 0; i < (memprof_config.pagesize / 2) / tramp_sz; i++) {
     memcpy(tramp_table + i, ent, tramp_sz);
   }
 
-  for (i = 0; i < (pagesize / 2) / inline_tramp_sz; i++) {
+  for (i = 0; i < (memprof_config.pagesize / 2) / inline_tramp_sz; i++) {
     memcpy(inline_tramp_table + i, inline_ent, inline_tramp_sz);
   }
 }
