@@ -168,7 +168,7 @@ arch_insert_inline_st2_tramp(void *addr, void *marker, void *trampoline, void *t
      * This is to arrange for the new value in freelist to be in %rdi, and as such
      * be the first argument to the C handler. As per the amd64 ABI.
      */
-    default_inline_st2_tramp.frame.rdi_source_displacement = marker - (void *)&(entry->frame.push_rbx);
+    default_inline_st2_tramp.frame.rdi_source_displacement = marker - (void *)&(entry->frame.align_rsp);
 
     /* jmp back to the instruction after stage 1 trampoline was inserted
      *
