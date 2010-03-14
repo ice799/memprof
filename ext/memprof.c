@@ -566,9 +566,68 @@ obj_dump(VALUE obj, yajl_gen gen)
       yajl_gen_cstr(gen, "node_code");
       yajl_gen_integer(gen, nd_type(obj));
 
-      switch (nd_type(obj)) {
-        case NODE_SCOPE:
+      #define PRINT_ID(sub) yajl_gen_format(gen, ":%s", rb_id2name(RNODE(obj)->sub.id));
+      #define PRINT_VAL(sub) yajl_gen_value(gen, RNODE(obj)->sub.value);
+
+      int nd_type = nd_type(obj);
+      yajl_gen_cstr(gen, "n1");
+      switch(nd_type) {
+        case NODE_CONST:
+        case NODE_DVAR:
+        case NODE_LVAR:
+        case NODE_LASGN:
+        case NODE_DASGN_CURR:
+        case NODE_GVAR:
+        case NODE_GASGN:
+        case NODE_BLOCK_ARG:
+          PRINT_ID(u1);
           break;
+        case NODE_SCOPE: {
+          ID *tbl = RNODE(obj)->nd_tbl;
+          yajl_gen_array_open(gen);
+          if (tbl) {
+            int size = tbl[0];
+            int i = 3;
+
+            for (; i < size+1; i++) {
+              yajl_gen_cstr(gen, tbl[i] == 95 ? "_" : rb_id2name(tbl[i]));
+            }
+          }
+          yajl_gen_array_close(gen);
+          break;
+        }
+        case NODE_CFUNC: {
+          const char *name = bin_find_symbol_name((void*)RNODE(obj)->u1.value);
+          yajl_gen_format(gen, "0x%x: %s", RNODE(obj)->u1.value, name ? name : "???");
+          break;
+        }
+        default:
+          PRINT_VAL(u1);
+      }
+
+      yajl_gen_cstr(gen, "n2");
+      switch(nd_type) {
+        case NODE_CALL:
+        case NODE_FBODY:
+        case NODE_DEFN:
+        case NODE_ATTRASGN:
+        case NODE_FCALL:
+        case NODE_VCALL:
+        case NODE_COLON2:
+        case NODE_COLON3:
+          PRINT_ID(u2);
+          break;
+        default:
+          PRINT_VAL(u2);
+      }
+
+      yajl_gen_cstr(gen, "n3");
+      switch(nd_type) {
+        case NODE_ARGS:
+          yajl_gen_integer(gen, RNODE(obj)->u3.cnt);
+          break;
+        default:
+          PRINT_VAL(u3);
       }
       break;
 
