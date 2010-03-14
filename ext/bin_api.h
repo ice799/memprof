@@ -40,6 +40,18 @@ void *
 bin_find_symbol(const char *sym, size_t *size);
 
 /*
+ * bin_find_symbol_name - find a symbol's name
+ *
+ * Given:
+ *  - sym - a symbol address
+ *
+ * This function will search for the symbol sym and return its name if
+ * found, or NULL if the symbol could not be found.
+ */
+const char *
+bin_find_symbol_name(void *sym);
+
+/*
  * bin_allocate_page - allocate a page suitable for trampolines
  *
  * This function will allocate a page of memory in the right area of the

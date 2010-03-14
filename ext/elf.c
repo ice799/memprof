@@ -302,6 +302,58 @@ bin_find_symbol(const char *sym, size_t *size)
 }
 
 /*
+ * do_bin_find_symbol_name - internal symbol name lookup function.
+ *
+ * Given:
+ *  - sym - the symbol address to look up
+ *  - elf - an elf information structure
+ *
+ * This function will return the name of the symbol
+ * or NULL if nothing can be found.
+ */
+static const char *
+do_bin_find_symbol_name(void *sym, struct elf_info *elf)
+{
+  char *name = NULL;
+  void *ptr;
+
+  assert(sym != NULL);
+  assert(elf != NULL);
+
+  assert(elf->symtab_data != NULL);
+  assert(elf->symtab_data->d_buf != NULL);
+
+  ElfW(Sym) *esym = (ElfW(Sym)*) elf->symtab_data->d_buf;
+  ElfW(Sym) *lastsym = (ElfW(Sym)*) ((char*) elf->symtab_data->d_buf + elf->symtab_data->d_size);
+
+  assert(esym <= lastsym);
+
+  for (; esym < lastsym; esym++){
+    /* ignore weak/numeric/empty symbols */
+    if ((esym->st_value == 0) ||
+        (ELF32_ST_BIND(esym->st_info)== STB_WEAK) ||
+        (ELF32_ST_BIND(esym->st_info)== STB_NUM))
+      continue;
+
+    ptr = elf->base_addr + (void *)esym->st_value;
+    name = elf_strptr(elf->elf, elf->symtab_shdr.sh_link, (size_t)esym->st_name);
+
+    if (ptr == sym)
+      return name;
+  }
+
+  return NULL;
+}
+
+/*
+ * Do the same thing as in bin_find_symbol above, but compare addresses and return the string name.
+ */
+const char *
+bin_find_symbol_name(void *sym) {
+  return do_bin_find_symbol_name(sym, ruby_info);
+}
+
+/*
  * bin_update_image - update the ruby binary image in memory.
  *
  * Given -
