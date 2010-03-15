@@ -92,5 +92,5 @@ bin_type_member_offset(const char *type, const char *member);
  * Returns 0 on success.
  */
 int
-bin_update_image(const char *trampee_addr, struct tramp_st2_entry *tramp);
+bin_update_image(const char *trampee, struct tramp_st2_entry *tramp);
 #endif
