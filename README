@@ -30,9 +30,13 @@ Supported systems
 =================
 Currently supporting:
 
-  Linux:
+  Linux (enable-shared AND disable-shared):
     x86_64 builds of Ruby Enterprise Edition 1.8.6/1.8.7
-    x86_64 builds of MRI Ruby (enabled-shared and disable-shared)
+    x86_64 builds of MRI Ruby
+
+  Snow Leopard (enable-shared AND disable-shared):
+    x86_64 builds of Ruby Enterprise Edition 1.8.6/1.8.7
+    x86_64 builds of MRI Ruby
 
     Support for unstripped binaries and stripped binaries if (and only if) the
     symbol files live in /usr/lib/debug/
@@ -48,7 +52,7 @@ Currently supporting:
 
 Experimental (somewhat broken) support:
 
-  Linux:
+  Linux and OSX:
     i386/i686 support.
 
   Snow Leopard:
@@ -56,7 +60,8 @@ Experimental (somewhat broken) support:
 
 Coming soon:
 
-  1.9 support
+  Official support for Ruby 1.9
+  Official support for i386/i686
 
 CREDITS
 =======

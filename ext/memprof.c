@@ -462,6 +462,16 @@ obj_dump(VALUE obj, yajl_gen gen)
       }
       break;
 
+    case T_STRUCT:
+      yajl_gen_cstr(gen, "struct");
+
+      yajl_gen_cstr(gen, "class");
+      yajl_gen_value(gen, RBASIC(obj)->klass);
+
+      yajl_gen_cstr(gen, "class_name");
+      yajl_gen_cstr(gen, rb_obj_classname(obj));
+      break;
+
     case T_FILE:
       yajl_gen_cstr(gen, "file");
       break;
@@ -508,7 +518,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
       struct SCOPE *scope = (struct SCOPE *)obj;
       if (scope->local_tbl) {
-        int i = 1;
+        int i = 0;
         int n = scope->local_tbl[0];
         VALUE *list = &scope->local_vars[-1];
         VALUE cur = *list++;
@@ -521,9 +531,13 @@ obj_dump(VALUE obj, yajl_gen gen)
           yajl_gen_map_open(gen);
           while (n--) {
             cur = *list++;
+            i++;
+
+            if (!rb_is_local_id(scope->local_tbl[i]))
+              continue;
+
             yajl_gen_cstr(gen, scope->local_tbl[i] == 95 ? "_" : rb_id2name(scope->local_tbl[i]));
             yajl_gen_value(gen, cur);
-            i++;
           }
           yajl_gen_map_close(gen);
         }
@@ -545,9 +559,68 @@ obj_dump(VALUE obj, yajl_gen gen)
       yajl_gen_cstr(gen, "node_code");
       yajl_gen_integer(gen, nd_type(obj));
 
-      switch (nd_type(obj)) {
-        case NODE_SCOPE:
+      #define PRINT_ID(sub) yajl_gen_format(gen, ":%s", rb_id2name(RNODE(obj)->sub.id));
+      #define PRINT_VAL(sub) yajl_gen_value(gen, RNODE(obj)->sub.value);
+
+      int nd_type = nd_type(obj);
+      yajl_gen_cstr(gen, "n1");
+      switch(nd_type) {
+        case NODE_CONST:
+        case NODE_DVAR:
+        case NODE_LVAR:
+        case NODE_LASGN:
+        case NODE_DASGN_CURR:
+        case NODE_GVAR:
+        case NODE_GASGN:
+        case NODE_BLOCK_ARG:
+          PRINT_ID(u1);
           break;
+        case NODE_SCOPE: {
+          ID *tbl = RNODE(obj)->nd_tbl;
+          yajl_gen_array_open(gen);
+          if (tbl) {
+            int size = tbl[0];
+            int i = 3;
+
+            for (; i < size+1; i++) {
+              yajl_gen_cstr(gen, tbl[i] == 95 ? "_" : rb_id2name(tbl[i]));
+            }
+          }
+          yajl_gen_array_close(gen);
+          break;
+        }
+        case NODE_CFUNC: {
+          const char *name = bin_find_symbol_name((void*)RNODE(obj)->u1.value);
+          yajl_gen_format(gen, "0x%x: %s", RNODE(obj)->u1.value, name ? name : "???");
+          break;
+        }
+        default:
+          PRINT_VAL(u1);
+      }
+
+      yajl_gen_cstr(gen, "n2");
+      switch(nd_type) {
+        case NODE_CALL:
+        case NODE_FBODY:
+        case NODE_DEFN:
+        case NODE_ATTRASGN:
+        case NODE_FCALL:
+        case NODE_VCALL:
+        case NODE_COLON2:
+        case NODE_COLON3:
+          PRINT_ID(u2);
+          break;
+        default:
+          PRINT_VAL(u2);
+      }
+
+      yajl_gen_cstr(gen, "n3");
+      switch(nd_type) {
+        case NODE_ARGS:
+          yajl_gen_integer(gen, RNODE(obj)->u3.cnt);
+          break;
+        default:
+          PRINT_VAL(u3);
       }
       break;
 
@@ -716,6 +789,16 @@ objs_each_dump(st_data_t key, st_data_t record, st_data_t arg)
   return ST_CONTINUE;
 }
 
+extern st_table *rb_global_tbl;
+
+static int
+globals_each_dump(st_data_t key, st_data_t record, st_data_t arg)
+{
+  yajl_gen_cstr((yajl_gen)arg, rb_id2name((ID)key));
+  yajl_gen_value((yajl_gen)arg, rb_gvar_get((void*)record));
+  return ST_CONTINUE;
+}
+
 void
 json_print(void *ctx, const char * str, unsigned int len)
 {
@@ -795,6 +878,22 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   track_objs = 0;
 
   //yajl_gen_array_open(gen);
+
+  yajl_gen_map_open(gen);
+
+  yajl_gen_cstr(gen, "_id");
+  yajl_gen_cstr(gen, "globals");
+
+  yajl_gen_cstr(gen, "type");
+  yajl_gen_cstr(gen, "globals");
+
+  yajl_gen_cstr(gen, "variables");
+
+  yajl_gen_map_open(gen);
+  st_foreach(rb_global_tbl, globals_each_dump, (st_data_t)gen);
+  yajl_gen_map_close(gen);
+
+  yajl_gen_map_close(gen);
 
   for (i=0; i < heaps_used; i++) {
     p = *(char**)(heaps + (i * memprof_config.sizeof_heaps_slot) + memprof_config.offset_heaps_slot_slot);

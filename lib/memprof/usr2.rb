@@ -1,4 +1,4 @@
-require File.expand_path('../../ext/memprof')
+require File.expand_path('../../memprof', __FILE__)
 Memprof.start
 trap('USR2'){
   pid = Process.pid

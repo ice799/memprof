@@ -326,13 +326,6 @@ build_sorted_nlist_table(const struct mach_header_64 *hdr, uint32_t *nsyms, uint
 
 void *
 bin_find_symbol(const char *symbol, size_t *size) {
-  /* Correctly prefix the symbol with a '_' (whats a prettier way to do this?) */
-  size_t len = strlen(symbol);
-  char real_symbol[len + 2];
-  memcpy(real_symbol, "_", 1);
-  memcpy((real_symbol + 1), symbol, len);
-  memcpy((real_symbol + len + 1), "\0", 1);
-
   void *ptr = NULL;
   void *file = NULL;
 
@@ -357,7 +350,7 @@ bin_find_symbol(const char *symbol, size_t *size) {
     const struct nlist_64 *nlist_entry = nlist_table[i];
     const char *string = string_table + nlist_entry->n_un.n_strx;
 
-    if (strcmp(real_symbol, string) == 0) {
+    if (string && strcmp(symbol, string+1) == 0) {
       const uint64_t addr = nlist_entry->n_value;
       /* Add the slide to get the *real* address in the process. */
       ptr = (void*)(addr + _dyld_get_image_vmaddr_slide(index));
@@ -392,6 +385,51 @@ bin_find_symbol(const char *symbol, size_t *size) {
   free(nlist_table);
   free(file);
   return ptr;
+}
+
+/*
+ * Do the same thing as in bin_find_symbol above, but compare addresses and return the string name.
+ */
+const char *
+bin_find_symbol_name(void *symbol) {
+  const char *name = NULL;
+  void *ptr = NULL;
+  void *file = NULL;
+
+  uint32_t i, j, k;
+  uint32_t stroff, nsyms = 0;
+  int index = 0;
+
+  file = get_ruby_file_and_header_index(&index);
+
+  const struct mach_header_64 *hdr = (const struct mach_header_64*) file;
+  if (hdr->magic != MH_MAGIC_64)
+    errx(EX_SOFTWARE, "Magic for Ruby Mach-O file doesn't match");
+
+  const struct nlist_64 **nlist_table = build_sorted_nlist_table(hdr, &nsyms, &stroff);
+  /*
+   * The string names of symbols are stored separately from the symbol table.
+   * The symbol table entries contain a string 'index', which is an offset into this region.
+   */
+  const char *string_table = (const char*)hdr + stroff;
+
+  for (i=0; i < nsyms; i++) {
+    const struct nlist_64 *nlist_entry = nlist_table[i];
+    const char *string = string_table + nlist_entry->n_un.n_strx;
+
+    const uint64_t addr = nlist_entry->n_value;
+    /* Add the slide to get the *real* address in the process. */
+    void *ptr = (void*)(addr + _dyld_get_image_vmaddr_slide(index));
+
+    if (ptr == symbol) {
+      name = string+1;
+      break;
+    }
+  }
+
+  free(nlist_table);
+  free(file);
+  return name;
 }
 
 /*
