@@ -909,8 +909,8 @@ find_debug_syms(struct elf_info *elf)
   elf->symtab_shdr = elf->debug_data->symtab_shdr;
 
   /* XXX free stuff */
+  /* LEAK elf_end(elf->elf); */
 
-  elf_end(elf->elf);
   elf->elf = elf->debug_data->elf;
   close(elf->debug_data->fd);
 
