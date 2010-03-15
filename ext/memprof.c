@@ -796,6 +796,16 @@ objs_each_dump(st_data_t key, st_data_t record, st_data_t arg)
   return ST_CONTINUE;
 }
 
+extern st_table *rb_global_tbl;
+
+static int
+globals_each_dump(st_data_t key, st_data_t record, st_data_t arg)
+{
+  yajl_gen_cstr((yajl_gen)arg, rb_id2name((ID)key));
+  yajl_gen_value((yajl_gen)arg, rb_gvar_get((void*)record));
+  return ST_CONTINUE;
+}
+
 void
 json_print(void *ctx, const char * str, unsigned int len)
 {
@@ -884,6 +894,22 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   track_objs = 0;
 
   //yajl_gen_array_open(gen);
+
+  yajl_gen_map_open(gen);
+
+  yajl_gen_cstr(gen, "_id");
+  yajl_gen_cstr(gen, "globals");
+
+  yajl_gen_cstr(gen, "type");
+  yajl_gen_cstr(gen, "globals");
+
+  yajl_gen_cstr(gen, "variables");
+
+  yajl_gen_map_open(gen);
+  st_foreach(rb_global_tbl, globals_each_dump, (st_data_t)gen);
+  yajl_gen_map_close(gen);
+
+  yajl_gen_map_close(gen);
 
   for (i=0; i < heaps_used; i++) {
     p = *(char**)(heaps + (i * sizeof__heaps_slot) + offset__heaps_slot__slot);
