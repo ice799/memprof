@@ -307,7 +307,7 @@ memprof_track(int argc, VALUE *argv, VALUE self)
 #include "env.h"
 #include "re.h"
 
-yajl_gen_status
+static yajl_gen_status
 yajl_gen_cstr(yajl_gen gen, const char * str)
 {
   if (!str || str[0] == 0)
@@ -316,7 +316,7 @@ yajl_gen_cstr(yajl_gen gen, const char * str)
     return yajl_gen_string(gen, (unsigned char *)str, strlen(str));
 }
 
-yajl_gen_status
+static yajl_gen_status
 yajl_gen_format(yajl_gen gen, char *format, ...)
 {
   va_list args;
@@ -335,7 +335,7 @@ yajl_gen_format(yajl_gen gen, char *format, ...)
   return ret;
 }
 
-yajl_gen_status
+static yajl_gen_status
 yajl_gen_value(yajl_gen gen, VALUE obj)
 {
   if (FIXNUM_P(obj))
@@ -381,7 +381,7 @@ each_ivar(st_data_t key, st_data_t record, st_data_t arg)
   return ST_CONTINUE;
 }
 
-char *
+static char *
 nd_type_str(VALUE obj)
 {
   switch(nd_type(obj)) {
@@ -427,7 +427,7 @@ static VALUE (*rb_classname)(VALUE);
  *  print details on different types of nodes (nd_next, nd_lit, nd_nth, etc)
  */
 
-void
+static void
 obj_dump(VALUE obj, yajl_gen gen)
 {
   int type;
@@ -799,7 +799,7 @@ globals_each_dump(st_data_t key, st_data_t record, st_data_t arg)
   return ST_CONTINUE;
 }
 
-void
+static void
 json_print(void *ctx, const char * str, unsigned int len)
 {
   FILE *out = (FILE *)ctx;
