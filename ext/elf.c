@@ -155,7 +155,7 @@ struct plt_hook_data {
   const void *tramp;
 };
 
-linkmap_cb_status
+static linkmap_cb_status
 hook_func_cb(struct link_map *map, void *data)
 {
   struct plt_hook_data *hook_data = data;
