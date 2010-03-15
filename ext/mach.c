@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <dlfcn.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include <mach-o/dyld.h>
 #include <mach-o/getsect.h>
@@ -19,6 +20,15 @@
 #include <mach-o/ldsyms.h>
 #include <mach-o/nlist.h>
 
+struct mach_config {
+  const struct nlist_64 **symbol_table;
+  const char *string_table;
+  uint32_t symbol_count;
+  uint32_t string_table_size;
+  intptr_t image_offset;
+};
+
+struct mach_config mach_config;
 extern struct memprof_config memprof_config;
 
 /*
@@ -254,7 +264,7 @@ get_ruby_file_and_header_index(int *index) {
 
 /*
  * This function compares two nlist_64 structures by their n_value field (address, usually).
- * It is used by qsort in build_sorted_nlist_table.
+ * It is used by qsort in extract_symbol_table.
  */
 
 static int
@@ -271,16 +281,19 @@ nlist_cmp(const void *obj1, const void *obj2) {
 }
 
 /*
- * This function returns an array of pointers to nlist_64 entries in the symbol table
- * of the file buffer pointed to by the passed mach header, sorted by address, and sets the
- * passed uint32_t pointers nsyms and stroff to those fields found in the symtab_command structure.
+ * This function sets the passed pointers to a buffer containing the nlist_64 entries,
+ * a buffer containing the string data, the number of entries, and the size of the string buffer.
  *
- * !!! The pointer returned by this function must be freed !!!
+ * The string names of symbols are stored separately from the symbol table.
+ * The symbol table entries contain a string 'index', which is an offset into this region.
+ *
+ * !!! This function allocates memory. symbol_table and string_table should be freed when no longer used !!!
  */
 
-static const struct nlist_64 **
-build_sorted_nlist_table(const struct mach_header_64 *hdr, uint32_t *nsyms, uint32_t *stroff) {
-  const struct nlist_64 **base;
+static void
+extract_symbol_table(const struct mach_header_64 *hdr, const struct nlist_64 ***symbol_table, const char **string_table, uint32_t *symbol_count, uint32_t *strsize) {
+  const struct nlist_64 **new_symtbl;
+  char *new_strtbl;
   uint32_t i, j;
 
   const char *lc = (const char*) hdr + sizeof(struct mach_header_64);
@@ -288,19 +301,23 @@ build_sorted_nlist_table(const struct mach_header_64 *hdr, uint32_t *nsyms, uint
   for (i = 0; i < hdr->ncmds; i++) {
     if (((const struct load_command*)lc)->cmd == LC_SYMTAB) {
       const struct symtab_command *sc = (const struct symtab_command*) lc;
-      const struct nlist_64 *symbol_table = (const struct nlist_64*)((const char*)hdr + sc->symoff);
+      const struct nlist_64 *file_symtbl = (const struct nlist_64*)((const char*)hdr + sc->symoff);
 
-      /* TODO: qsort this table *IN PLACE* instead of making a copy of it. */
-      base = malloc(sc->nsyms * sizeof(struct nlist_64*));
+      new_symtbl = malloc(sc->nsyms * sizeof(struct nlist_64*));
+      new_strtbl = malloc(sc->strsize);
+
+      memcpy(new_strtbl, (char*)hdr + sc->stroff, sc->strsize);
 
       for (j = 0; j < sc->nsyms; j++)
-        base[j] = symbol_table + j;
+        new_symtbl[j] = file_symtbl + j;
 
-      qsort(base, sc->nsyms, sizeof(struct nlist_64*), &nlist_cmp);
+      qsort(new_symtbl, sc->nsyms, sizeof(struct nlist_64*), &nlist_cmp);
 
-      *nsyms = sc->nsyms;
-      *stroff = sc->stroff;
-      return base;
+      *symbol_table = new_symtbl;
+      *string_table = new_strtbl;
+      *symbol_count = sc->nsyms;
+      *strsize = sc->strsize;
+      return;
     }
 
     lc += ((const struct load_command*)lc)->cmdsize;
@@ -309,51 +326,36 @@ build_sorted_nlist_table(const struct mach_header_64 *hdr, uint32_t *nsyms, uint
 }
 
 /*
- * The workflow for bin_find_symbol is as follows:
- *
- * 1. Prefix the symbol with a "_", since Apple is weird
- * 2. Figure out what file we think contains the symbol table (either the executable, or libruby),
- *    and read it into memory. We have to do this because the symbol table is not loaded
- *    into the process as part of the normal image loading. While we're doing this,
- *    figure out the dyld image index of the corresponding *in-process* image.
- * 3. Work up a copy of the symbol table, sorted by address.
- * 4. Iterate over the sorted table and find the symbol that matches our search name
- * 5. Obtain the rough (padded to 16 byte alignment) size of the symbol by subtracting it's
- *    address from the address of the symbol *after* it.
- * 6. Calculate the *real* address of the symbol by adding the image's "slide"
- *    (offset at which the image was loaded into the process) to the table entry's address.
+ * Return the string at the given offset into the symbol table's string buffer
+ */
+
+static inline const char*
+get_symtab_string(uint32_t stroff) {
+  assert(mach_config.string_table != NULL);
+  assert(stroff < mach_config.string_table_size);
+  return mach_config.string_table + stroff;
+}
+
+/*
+ * Return the address and size of a symbol given it's name
  */
 
 void *
 bin_find_symbol(const char *symbol, size_t *size) {
   void *ptr = NULL;
-  void *file = NULL;
+  uint32_t i, j;
 
-  uint32_t i, j, k;
-  uint32_t stroff, nsyms = 0;
-  int index = 0;
+  assert(mach_config.symbol_table != NULL);
+  assert(mach_config.symbol_count > 0);
 
-  file = get_ruby_file_and_header_index(&index);
-
-  const struct mach_header_64 *hdr = (const struct mach_header_64*) file;
-  if (hdr->magic != MH_MAGIC_64)
-    errx(EX_SOFTWARE, "Magic for Ruby Mach-O file doesn't match");
-
-  const struct nlist_64 **nlist_table = build_sorted_nlist_table(hdr, &nsyms, &stroff);
-  /*
-   * The string names of symbols are stored separately from the symbol table.
-   * The symbol table entries contain a string 'index', which is an offset into this region.
-   */
-  const char *string_table = (const char*)hdr + stroff;
-
-  for (i=0; i < nsyms; i++) {
-    const struct nlist_64 *nlist_entry = nlist_table[i];
-    const char *string = string_table + nlist_entry->n_un.n_strx;
+  for (i=0; i < mach_config.symbol_count; i++) {
+    const struct nlist_64 *nlist_entry = mach_config.symbol_table[i];
+    const char *string = get_symtab_string(nlist_entry->n_un.n_strx);
 
     if (string && strcmp(symbol, string+1) == 0) {
       const uint64_t addr = nlist_entry->n_value;
       /* Add the slide to get the *real* address in the process. */
-      ptr = (void*)(addr + _dyld_get_image_vmaddr_slide(index));
+      ptr = (void*)(addr + mach_config.image_offset);
 
       if (size) {
         const struct nlist_64 *next_entry = NULL;
@@ -365,7 +367,7 @@ bin_find_symbol(const char *symbol, size_t *size) {
          */
         j = 1;
         while (next_entry == NULL) {
-          const struct nlist_64 *tmp_entry = nlist_table[i + j];
+          const struct nlist_64 *tmp_entry = mach_config.symbol_table[i + j];
           if (nlist_entry->n_value != tmp_entry->n_value)
             next_entry = tmp_entry;
           j++;
@@ -381,9 +383,6 @@ bin_find_symbol(const char *symbol, size_t *size) {
       break;
     }
   }
-
-  free(nlist_table);
-  free(file);
   return ptr;
 }
 
@@ -394,32 +393,18 @@ const char *
 bin_find_symbol_name(void *symbol) {
   const char *name = NULL;
   void *ptr = NULL;
-  void *file = NULL;
+  uint32_t i;
 
-  uint32_t i, j, k;
-  uint32_t stroff, nsyms = 0;
-  int index = 0;
+  assert(mach_config.symbol_table != NULL);
+  assert(mach_config.symbol_count > 0);
 
-  file = get_ruby_file_and_header_index(&index);
-
-  const struct mach_header_64 *hdr = (const struct mach_header_64*) file;
-  if (hdr->magic != MH_MAGIC_64)
-    errx(EX_SOFTWARE, "Magic for Ruby Mach-O file doesn't match");
-
-  const struct nlist_64 **nlist_table = build_sorted_nlist_table(hdr, &nsyms, &stroff);
-  /*
-   * The string names of symbols are stored separately from the symbol table.
-   * The symbol table entries contain a string 'index', which is an offset into this region.
-   */
-  const char *string_table = (const char*)hdr + stroff;
-
-  for (i=0; i < nsyms; i++) {
-    const struct nlist_64 *nlist_entry = nlist_table[i];
-    const char *string = string_table + nlist_entry->n_un.n_strx;
+  for (i=0; i < mach_config.symbol_count; i++) {
+    const struct nlist_64 *nlist_entry = mach_config.symbol_table[i];
+    const char *string = get_symtab_string(nlist_entry->n_un.n_strx);
 
     const uint64_t addr = nlist_entry->n_value;
     /* Add the slide to get the *real* address in the process. */
-    void *ptr = (void*)(addr + _dyld_get_image_vmaddr_slide(index));
+    void *ptr = (void*)(addr + mach_config.image_offset);
 
     if (ptr == symbol) {
       name = string+1;
@@ -427,8 +412,6 @@ bin_find_symbol_name(void *symbol) {
     }
   }
 
-  free(nlist_table);
-  free(file);
   return name;
 }
 
@@ -501,6 +484,25 @@ bin_type_member_offset(const char *type, const char *member)
 void
 bin_init()
 {
-  /* mach-o is so cool it needs no initialization */
+  void *file = NULL;
+  int index = 0;
+
+  memset(&mach_config, 0, sizeof(struct mach_config));
+
+  file = get_ruby_file_and_header_index(&index);
+
+  const struct mach_header_64 *hdr = (const struct mach_header_64*) file;
+  if (hdr->magic != MH_MAGIC_64)
+    errx(EX_SOFTWARE, "Magic for Ruby Mach-O file doesn't match");
+
+  mach_config.image_offset = _dyld_get_image_vmaddr_slide(index);
+
+  extract_symbol_table(hdr, &mach_config.symbol_table, &mach_config.string_table, &mach_config.symbol_count, &mach_config.string_table_size);
+
+  assert(mach_config.symbol_table != NULL);
+  assert(mach_config.string_table != NULL);
+  assert(mach_config.symbol_count > 0);
+
+  free(file);
 }
 #endif
