@@ -529,7 +529,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
       struct SCOPE *scope = (struct SCOPE *)obj;
       if (scope->local_tbl) {
-        int i = 1;
+        int i = 0;
         int n = scope->local_tbl[0];
         VALUE *list = &scope->local_vars[-1];
         VALUE cur = *list++;
@@ -542,9 +542,13 @@ obj_dump(VALUE obj, yajl_gen gen)
           yajl_gen_map_open(gen);
           while (n--) {
             cur = *list++;
+            i++;
+
+            if (!rb_is_local_id(scope->local_tbl[i]))
+              continue;
+
             yajl_gen_cstr(gen, scope->local_tbl[i] == 95 ? "_" : rb_id2name(scope->local_tbl[i]));
             yajl_gen_value(gen, cur);
-            i++;
           }
           yajl_gen_map_close(gen);
         }
