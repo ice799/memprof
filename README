@@ -5,14 +5,6 @@ What is memprof?
 Memprof is a memory profiler for Ruby that requires no patches to the Ruby VM.
 It can help you find Ruby level memory leaks in your application.
 
-Required to install
-===================
-If you are using the Linux version, you need to install libelf:
-
-apt-get install libelfg0-dev
-
-The experimental OSX version needs no additional libraries.
-
 How to use
 ==========
 
@@ -36,13 +28,23 @@ Memprof.stats also takes an (optional) file name to write the output to a file.
 
 Supported systems
 =================
-This only works on unstripped binaries.
-
 Currently supporting:
 
   Linux:
     x86_64 builds of Ruby Enterprise Edition 1.8.6/1.8.7
     x86_64 builds of MRI Ruby (enabled-shared and disable-shared)
+
+    Support for unstripped binaries and stripped binaries if (and only if) the
+    symbol files live in /usr/lib/debug/
+
+    You can get symbol files for system Rubies by installing -dbg packages.
+
+    For example, on ubuntu: apt-get install libruby1.8-dbg
+
+  Snow Leopard:
+    x86_64 builds of Ruby Enterprise Edition 1.8.7
+    x86_64 builds of MRI Ruby  (enable-shared and disable-shared)
+    Unstripped binaries only!
 
 Experimental (somewhat broken) support:
 
@@ -50,15 +52,11 @@ Experimental (somewhat broken) support:
     i386/i686 support.
 
   Snow Leopard:
-    x86_64 builds of MRI (both enable-shared and disable-shared)
     OSX system Ruby, distributed with Snow Leopard
 
 Coming soon:
 
-  Official support for Snow Leopard.
-
-  Linux:
-    Tracking object allocationns in C extensions.
+  1.9 support
 
 CREDITS
 =======
