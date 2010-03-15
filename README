@@ -28,8 +28,6 @@ Memprof.stats also takes an (optional) file name to write the output to a file.
 
 Supported systems
 =================
-**This only works on unstripped binaries.**
-
 Currently supporting:
 
   Linux (enable-shared AND disable-shared):
@@ -40,19 +38,27 @@ Currently supporting:
     x86_64 builds of Ruby Enterprise Edition 1.8.6/1.8.7
     x86_64 builds of MRI Ruby
 
+    Support for unstripped binaries and stripped binaries if (and only if) the
+    symbol files live in /usr/lib/debug/
+
+    You can get symbol files for system Rubies by installing -dbg packages.
+
+    For example, on ubuntu: apt-get install libruby1.8-dbg
+
+  Snow Leopard:
+    x86_64 builds of Ruby Enterprise Edition 1.8.7
+    x86_64 builds of MRI Ruby  (enable-shared and disable-shared)
+    Unstripped binaries only!
+
 Experimental (somewhat broken) support:
 
   Linux and OSX:
     i386/i686 support.
 
   Snow Leopard:
-    OSX system Ruby, distributed with Snow Leopard.
+    OSX system Ruby, distributed with Snow Leopard
 
 Coming soon:
-
-  Linux:
-    Tracking object allocationns in C extensions.
-
   Official support for Ruby 1.9
   Official support for i386/i686
 
