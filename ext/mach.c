@@ -4,15 +4,16 @@
 #include "arch.h"
 #include "util.h"
 
+#include <assert.h>
+#include <dlfcn.h>
+#include <err.h>
 #include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sysexits.h>
 #include <sys/mman.h>
-#include <stdio.h>
 #include <sys/stat.h>
-#include <dlfcn.h>
-#include <stdlib.h>
-#include <assert.h>
 
 #include <mach-o/dyld.h>
 #include <mach-o/getsect.h>
@@ -28,7 +29,7 @@ struct mach_config {
   intptr_t image_offset;
 };
 
-struct mach_config mach_config;
+static struct mach_config mach_config;
 extern struct memprof_config memprof_config;
 
 /*
@@ -206,14 +207,20 @@ update_bin_for_mach_header(const struct mach_header *header, intptr_t slide, voi
 
 static int
 find_dyld_image_index(const struct mach_header_64 *hdr) {
-  int i;
+  uint32_t i;
 
   for (i = 0; i < _dyld_image_count(); i++) {
     const struct mach_header_64 *tmphdr = (const struct mach_header_64*) _dyld_get_image_header(i);
     if (hdr == tmphdr)
       return i;
   }
+
   errx(EX_SOFTWARE, "Could not find image index");
+
+  /* this is to quiet a GCC warning. might be a bug because errx is marked
+   * __dead2/noreturn
+   */
+  return -1;
 }
 
 /*
@@ -392,7 +399,6 @@ bin_find_symbol(const char *symbol, size_t *size) {
 const char *
 bin_find_symbol_name(void *symbol) {
   const char *name = NULL;
-  void *ptr = NULL;
   uint32_t i;
 
   assert(mach_config.symbol_table != NULL);

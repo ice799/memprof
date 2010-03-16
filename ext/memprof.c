@@ -188,7 +188,7 @@ objs_tabulate(st_data_t key, st_data_t record, st_data_t arg)
 
 struct results {
   char **entries;
-  unsigned long num_entries;
+  size_t num_entries;
 };
 
 static int
@@ -240,7 +240,7 @@ memprof_stats(int argc, VALUE *argv, VALUE self)
 {
   st_table *tmp_table;
   struct results res;
-  int i;
+  size_t i;
   VALUE str;
   FILE *out = NULL;
 

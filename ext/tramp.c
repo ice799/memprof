@@ -32,7 +32,7 @@ extern struct memprof_config memprof_config;
 void
 create_tramp_table()
 {
-  int i;
+  size_t i;
   void *region, *ent, *inline_ent;
   size_t tramp_sz = 0, inline_tramp_sz = 0;
 
