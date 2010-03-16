@@ -468,7 +468,7 @@ obj_dump(VALUE obj, yajl_gen gen)
       }
 
       if (RDATA(obj)->dfree == (RUBY_DATA_FUNC)rb_blk_free) {
-        void *val;
+        void *val, *prev;
         VALUE ptr;
 
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_body);
@@ -526,7 +526,10 @@ obj_dump(VALUE obj, yajl_gen gen)
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_prev);
         while (val) {
           yajl_gen_format(gen, "0x%x", val);
+          prev = val;
           val = *(void**)(ptr + memprof_config.offset_BLOCK_prev);
+          if (prev == val)
+            break;
         }
         yajl_gen_array_close(gen);
       }
