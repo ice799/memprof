@@ -419,6 +419,7 @@ nd_type_str(VALUE obj)
 }
 
 static VALUE (*rb_classname)(VALUE);
+static RUBY_DATA_FUNC *rb_blk_free;
 
 /* TODO
  *  look for FL_EXIVAR flag and print ivars
@@ -459,6 +460,75 @@ obj_dump(VALUE obj, yajl_gen gen)
           yajl_gen_cstr(gen, RSTRING(name)->ptr);
         else
           yajl_gen_cstr(gen, 0);
+      }
+
+      if (DATA_PTR(obj)) {
+        yajl_gen_cstr(gen, "data");
+        yajl_gen_format(gen, "0x%x", DATA_PTR(obj));
+      }
+
+      if (RDATA(obj)->dfree == (RUBY_DATA_FUNC)rb_blk_free) {
+        void *val;
+        VALUE ptr;
+
+        val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_body);
+        if (val) {
+          yajl_gen_cstr(gen, "nd_body");
+          yajl_gen_format(gen, "0x%x", val);
+        }
+
+        val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_var);
+        if (val) {
+          yajl_gen_cstr(gen, "nd_var");
+          yajl_gen_format(gen, "0x%x", val);
+        }
+
+        val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_cref);
+        if (val) {
+          yajl_gen_cstr(gen, "nd_cref");
+          yajl_gen_format(gen, "0x%x", val);
+        }
+
+        val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_dyna_vars);
+        if (val) {
+          yajl_gen_cstr(gen, "vars");
+          yajl_gen_format(gen, "0x%x", val);
+        }
+
+        val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_scope);
+        if (val) {
+          yajl_gen_cstr(gen, "scope");
+          yajl_gen_format(gen, "0x%x", val);
+        }
+
+        ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_BLOCK_self);
+        yajl_gen_cstr(gen, "self");
+        yajl_gen_value(gen, ptr);
+
+        ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_BLOCK_klass);
+        yajl_gen_cstr(gen, "klass");
+        yajl_gen_value(gen, ptr);
+
+        ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_BLOCK_orig_thread);
+        yajl_gen_cstr(gen, "thread");
+        yajl_gen_value(gen, ptr);
+
+        ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_BLOCK_wrapper);
+        yajl_gen_cstr(gen, "wrapper");
+        yajl_gen_value(gen, ptr);
+
+        ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_BLOCK_block_obj);
+        yajl_gen_cstr(gen, "block");
+        yajl_gen_value(gen, ptr);
+
+        yajl_gen_cstr(gen, "prev");
+        yajl_gen_array_open(gen);
+        val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_prev);
+        while (val) {
+          yajl_gen_format(gen, "0x%x", val);
+          val = *(void**)(ptr + memprof_config.offset_BLOCK_prev);
+        }
+        yajl_gen_array_close(gen);
       }
       break;
 
@@ -990,6 +1060,7 @@ init_memprof_config_extended() {
   }
 
   memprof_config.classname                  = bin_find_symbol("classname", NULL);
+  memprof_config.blk_free                   = bin_find_symbol("blk_free", NULL);
   memprof_config.rb_mark_table_add_filename = bin_find_symbol("rb_mark_table_add_filename", NULL);
 
   /* Stuff for dumping the heap */
@@ -1014,6 +1085,61 @@ init_memprof_config_extended() {
   memprof_config.offset_heaps_slot_slot     = offset__heaps_slot__slot;
 #else
   memprof_config.offset_heaps_slot_slot     = bin_type_member_offset("heaps_slot", "slot");
+#endif
+#ifdef offset__BLOCK__body
+  memprof_config.offset_BLOCK_body          = offset__BLOCK__body;
+#else
+  memprof_config.offset_BLOCK_body          = bin_type_member_offset("BLOCK", "body");
+#endif
+#ifdef offset__BLOCK__var
+  memprof_config.offset_BLOCK_var           = offset__BLOCK__var;
+#else
+  memprof_config.offset_BLOCK_var           = bin_type_member_offset("BLOCK", "var");
+#endif
+#ifdef offset__BLOCK__cref
+  memprof_config.offset_BLOCK_cref          = offset__BLOCK__cref;
+#else
+  memprof_config.offset_BLOCK_cref          = bin_type_member_offset("BLOCK", "cref");
+#endif
+#ifdef offset__BLOCK__prev
+  memprof_config.offset_BLOCK_prev          = offset__BLOCK__prev;
+#else
+  memprof_config.offset_BLOCK_prev          = bin_type_member_offset("BLOCK", "prev");
+#endif
+#ifdef offset__BLOCK__self
+  memprof_config.offset_BLOCK_self          = offset__BLOCK__self;
+#else
+  memprof_config.offset_BLOCK_self          = bin_type_member_offset("BLOCK", "self");
+#endif
+#ifdef offset__BLOCK__klass
+  memprof_config.offset_BLOCK_klass         = offset__BLOCK__klass;
+#else
+  memprof_config.offset_BLOCK_klass         = bin_type_member_offset("BLOCK", "klass");
+#endif
+#ifdef offset__BLOCK__orig_thread
+  memprof_config.offset_BLOCK_orig_thread   = offset__BLOCK__orig_thread;
+#else
+  memprof_config.offset_BLOCK_orig_thread   = bin_type_member_offset("BLOCK", "orig_thread");
+#endif
+#ifdef offset__BLOCK__wrapper
+  memprof_config.offset_BLOCK_wrapper       = offset__BLOCK__wrapper;
+#else
+  memprof_config.offset_BLOCK_wrapper       = bin_type_member_offset("BLOCK", "wrapper");
+#endif
+#ifdef offset__BLOCK__block_obj
+  memprof_config.offset_BLOCK_block_obj     = offset__BLOCK__block_obj;
+#else
+  memprof_config.offset_BLOCK_block_obj     = bin_type_member_offset("BLOCK", "block_obj");
+#endif
+#ifdef offset__BLOCK__scope
+  memprof_config.offset_BLOCK_scope         = offset__BLOCK__scope;
+#else
+  memprof_config.offset_BLOCK_scope         = bin_type_member_offset("BLOCK", "scope");
+#endif
+#ifdef offset__BLOCK__dyna_vars
+  memprof_config.offset_BLOCK_dyna_vars     = offset__BLOCK__dyna_vars;
+#else
+  memprof_config.offset_BLOCK_dyna_vars     = bin_type_member_offset("BLOCK", "dyna_vars");
 #endif
 
   int heap_errors_printed = 0;
@@ -1110,6 +1236,7 @@ Init_memprof()
 
   rb_classname = memprof_config.classname;
   rb_add_freelist = memprof_config.add_freelist;
+  rb_blk_free = memprof_config.blk_free;
   ptr_to_rb_mark_table_add_filename = memprof_config.rb_mark_table_add_filename;
 
   assert(rb_classname);
