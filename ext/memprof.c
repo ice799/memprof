@@ -707,12 +707,14 @@ obj_dump(VALUE obj, yajl_gen gen)
       yajl_gen_cstr(gen, "super");
       yajl_gen_value(gen, RCLASS(obj)->super);
 
-      yajl_gen_cstr(gen, "super_name");
-      VALUE super_name = rb_classname(RCLASS(obj)->super);
-      if (RTEST(super_name))
-        yajl_gen_cstr(gen, RSTRING(super_name)->ptr);
-      else
-        yajl_gen_cstr(gen, 0);
+      if (RTEST(RCLASS(obj)->super)) {
+        yajl_gen_cstr(gen, "super_name");
+        VALUE super_name = rb_classname(RCLASS(obj)->super);
+        if (RTEST(super_name))
+          yajl_gen_cstr(gen, RSTRING(super_name)->ptr);
+        else
+          yajl_gen_cstr(gen, 0);
+      }
 
       if (FL_TEST(obj, FL_SINGLETON)) {
         yajl_gen_cstr(gen, "singleton");
