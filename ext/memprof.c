@@ -621,7 +621,17 @@ obj_dump(VALUE obj, yajl_gen gen)
           PRINT_ID(u2);
           break;
 
+        case NODE_OP_ASGN1:
+          if (RNODE(obj)->nd_mid == 0)
+            yajl_gen_cstr(gen, ":||");
+          else if (RNODE(obj)->nd_mid == 1)
+            yajl_gen_cstr(gen, ":&&");
+          else
+            PRINT_ID(u2);
+          break;
+
         case NODE_NTH_REF:
+        case NODE_CFUNC:
           yajl_gen_integer(gen, RNODE(obj)->u2.argc);
           break;
 
