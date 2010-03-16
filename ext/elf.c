@@ -240,7 +240,7 @@ static void *
 do_bin_allocate_page(struct elf_info *info)
 {
   void * ret = NULL, *addr = NULL;
-  uint16_t count = 0;
+  uint32_t count = 0;
 
   if (!info)
     return NULL;
@@ -250,7 +250,7 @@ do_bin_allocate_page(struct elf_info *info)
      * a page.
      */
     addr = info->text_segment + info->text_segment_len;
-    for (; count < UINT_MAX; addr += memprof_config.pagesize, count += memprof_config.pagesize) {
+    for (; count < USHRT_MAX; addr += memprof_config.pagesize, count += memprof_config.pagesize) {
       ret = mmap(addr, memprof_config.pagesize, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_ANON|MAP_PRIVATE, -1, 0);
       if (ret != MAP_FAILED) {
         memset(ret, 0x90, memprof_config.pagesize);
@@ -909,8 +909,8 @@ find_debug_syms(struct elf_info *elf)
   elf->symtab_shdr = elf->debug_data->symtab_shdr;
 
   /* XXX free stuff */
+  /* LEAK elf_end(elf->elf); */
 
-  elf_end(elf->elf);
   elf->elf = elf->debug_data->elf;
   close(elf->debug_data->fd);
 
