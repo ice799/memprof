@@ -144,28 +144,40 @@ if have_header('mach-o/dyld.h')
   # XXX How to determine this properly? RUBY_PLATFORM reports "i686-darwin10.2.0" on Snow Leopard.
   add_define "_ARCH_x86_64_"
 
-  expressions = [
-    [:sizeof__RVALUE, "sizeof(RVALUE)"],
-    [:sizeof__heaps_slot, "sizeof(struct heaps_slot)"],
-    [:offset__heaps_slot__slot, "(int)&(((struct heaps_slot *)0)->slot)"],
-    [:offset__heaps_slot__limit, "(int)&(((struct heaps_slot *)0)->limit)"],
-    [:offset__BLOCK__body, "(int)&(((struct BLOCK *)0)->body)"],
-    [:offset__BLOCK__var, "(int)&(((struct BLOCK *)0)->var)"],
-    [:offset__BLOCK__cref, "(int)&(((struct BLOCK *)0)->cref)"],
-    [:offset__BLOCK__self, "(int)&(((struct BLOCK *)0)->self)"],
-    [:offset__BLOCK__klass, "(int)&(((struct BLOCK *)0)->klass)"],
-    [:offset__BLOCK__wrapper, "(int)&(((struct BLOCK *)0)->wrapper)"],
-    [:offset__BLOCK__block_obj, "(int)&(((struct BLOCK *)0)->block_obj)"],
-    [:offset__BLOCK__orig_thread, "(int)&(((struct BLOCK *)0)->orig_thread)"],
-    [:offset__BLOCK__dyna_vars, "(int)&(((struct BLOCK *)0)->dyna_vars)"],
-    [:offset__BLOCK__scope, "(int)&(((struct BLOCK *)0)->scope)"],
-    [:offset__BLOCK__prev, "(int)&(((struct BLOCK *)0)->prev)"]
-    # "&add_freelist",
-    # "&rb_newobj",
-    # "&freelist",
-    # "&heaps",
-    # "&heaps_used"
+  sizes_of = [
+    'RVALUE',
+    'struct heaps_slot'
   ]
+
+  offsets_of = {
+    'struct heaps_slot' => %w[ slot limit ],
+    'struct BLOCK' => %w[ body var cref self klass wrapper block_obj orig_thread dyna_vars scope prev ],
+    'struct METHOD' => %w[ klass rklass recv id oid body ]
+  }
+
+  addresses_of = [
+    # 'add_freelist',
+    # 'rb_newobj',
+    # 'freelist',
+    # 'heaps',
+    # 'heaps_used'
+  ]
+
+  expressions = []
+
+  sizes_of.each do |type|
+    name = type.sub(/^struct\s*/,'')
+    expressions << ["sizeof__#{name}", "sizeof(#{type})"]
+  end
+  offsets_of.each do |type, members|
+    name = type.sub(/^struct\s*/,'')
+    members.each do |member|
+      expressions << ["offset__#{name}__#{member}", "(size_t)&(((#{type} *)0)->#{member})"]
+    end
+  end
+  addresses_of.each do |name|
+    expressions << ["address__#{name}", "&#{name}"]
+  end
 
   pid = fork{sleep}
   output = IO.popen('gdb --interpreter=mi --quiet', 'w+') do |io|
@@ -187,7 +199,7 @@ if have_header('mach-o/dyld.h')
 
   values = results.map{ |l| l[/value="(.+?)"/, 1] }
   vars = Hash[ *expressions.map{|n,e| n }.zip(values).flatten(1) ].each do |name, val|
-    add_define "#{name}=#{val}"
+    add_define "#{name}=#{val.split.first}"
   end
 end
 
