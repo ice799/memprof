@@ -540,9 +540,8 @@ obj_dump(VALUE obj, yajl_gen gen)
           if (prev == val)
             break;
         }
-        */
-
         yajl_gen_array_close(gen);
+        */
 
       } else if (RDATA(obj)->dmark == (RUBY_DATA_FUNC)rb_bm_mark) {
         VALUE ptr;
