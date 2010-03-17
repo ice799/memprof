@@ -514,13 +514,21 @@ obj_dump(VALUE obj, yajl_gen gen)
         yajl_gen_value(gen, ptr);
 
         ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_BLOCK_wrapper);
-        yajl_gen_cstr(gen, "wrapper");
-        yajl_gen_value(gen, ptr);
+        if (RTEST(ptr)) {
+          yajl_gen_cstr(gen, "wrapper");
+          yajl_gen_value(gen, ptr);
+        }
 
         ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_BLOCK_block_obj);
-        yajl_gen_cstr(gen, "block");
-        yajl_gen_value(gen, ptr);
+        if (RTEST(ptr)) {
+          yajl_gen_cstr(gen, "block");
+          yajl_gen_value(gen, ptr);
+        }
 
+        /* TODO: is .prev actually useful? refers to non-heap allocated struct BLOCKs,
+         * but we don't print out any information about those
+         */
+        /*
         yajl_gen_cstr(gen, "prev");
         yajl_gen_array_open(gen);
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_prev);
@@ -531,6 +539,8 @@ obj_dump(VALUE obj, yajl_gen gen)
           if (prev == val)
             break;
         }
+        */
+
         yajl_gen_array_close(gen);
       }
       break;
@@ -596,8 +606,10 @@ obj_dump(VALUE obj, yajl_gen gen)
         VALUE *list = &scope->local_vars[-1];
         VALUE cur = *list++;
 
-        yajl_gen_cstr(gen, "node");
-        yajl_gen_value(gen, cur);
+        if (RTEST(cur)) {
+          yajl_gen_cstr(gen, "node");
+          yajl_gen_value(gen, cur);
+        }
 
         if (n) {
           yajl_gen_cstr(gen, "variables");
