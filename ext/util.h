@@ -26,6 +26,7 @@ struct memprof_config {
 
   void *rb_mark_table_add_filename;
 
+  void *bm_mark;
   void *blk_free;
 
   void *heaps;

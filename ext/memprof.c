@@ -419,6 +419,7 @@ nd_type_str(VALUE obj)
 }
 
 static VALUE (*rb_classname)(VALUE);
+static RUBY_DATA_FUNC *rb_bm_mark;
 static RUBY_DATA_FUNC *rb_blk_free;
 
 /* TODO
@@ -542,6 +543,46 @@ obj_dump(VALUE obj, yajl_gen gen)
         */
 
         yajl_gen_array_close(gen);
+
+      } else if (RDATA(obj)->dmark == (RUBY_DATA_FUNC)rb_bm_mark) {
+        VALUE ptr;
+        ID id, mid;
+
+        ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_METHOD_klass);
+        if (RTEST(ptr)) {
+          yajl_gen_cstr(gen, "klass");
+          yajl_gen_value(gen, ptr);
+        }
+
+        ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_METHOD_rklass);
+        if (RTEST(ptr)) {
+          yajl_gen_cstr(gen, "rklass");
+          yajl_gen_value(gen, ptr);
+        }
+
+        ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_METHOD_recv);
+        if (RTEST(ptr)) {
+          yajl_gen_cstr(gen, "recv");
+          yajl_gen_value(gen, ptr);
+        }
+
+        ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_METHOD_body);
+        if (RTEST(ptr)) {
+          yajl_gen_cstr(gen, "node");
+          yajl_gen_value(gen, ptr);
+        }
+
+        mid = *(ID*)(DATA_PTR(obj) + memprof_config.offset_METHOD_id);
+        if (mid) {
+          yajl_gen_cstr(gen, "mid");
+          yajl_gen_format(gen, ":%s", rb_id2name(mid));
+        }
+
+        id = *(ID*)(DATA_PTR(obj) + memprof_config.offset_METHOD_oid);
+        if (id && id != mid) {
+          yajl_gen_cstr(gen, "oid");
+          yajl_gen_format(gen, ":%s", rb_id2name(id));
+        }
       }
       break;
 
@@ -1075,6 +1116,7 @@ init_memprof_config_extended() {
   }
 
   memprof_config.classname                  = bin_find_symbol("classname", NULL);
+  memprof_config.bm_mark                    = bin_find_symbol("bm_mark", NULL);
   memprof_config.blk_free                   = bin_find_symbol("blk_free", NULL);
   memprof_config.rb_mark_table_add_filename = bin_find_symbol("rb_mark_table_add_filename", NULL);
 
@@ -1281,6 +1323,7 @@ Init_memprof()
 
   rb_classname = memprof_config.classname;
   rb_add_freelist = memprof_config.add_freelist;
+  rb_bm_mark = memprof_config.bm_mark;
   rb_blk_free = memprof_config.blk_free;
   ptr_to_rb_mark_table_add_filename = memprof_config.rb_mark_table_add_filename;
 
