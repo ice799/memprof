@@ -13,32 +13,49 @@
 struct memprof_config {
   void *gc_sweep;
   size_t gc_sweep_size;
+
   void *finalize_list;
   size_t finalize_list_size;
+
   void *rb_gc_force_recycle;
   size_t rb_gc_force_recycle_size;
+
   void *freelist;
   void *classname;
   void *add_freelist;
+
   void *rb_mark_table_add_filename;
+
   void *blk_free;
+
   void *heaps;
   void *heaps_used;
+
   size_t sizeof_RVALUE;
   size_t sizeof_heaps_slot;
-  int offset_heaps_slot_limit;
-  int offset_heaps_slot_slot;
-  int offset_BLOCK_body;
-  int offset_BLOCK_var;
-  int offset_BLOCK_cref;
-  int offset_BLOCK_prev;
-  int offset_BLOCK_self;
-  int offset_BLOCK_klass;
-  int offset_BLOCK_wrapper;
-  int offset_BLOCK_orig_thread;
-  int offset_BLOCK_block_obj;
-  int offset_BLOCK_scope;
-  int offset_BLOCK_dyna_vars;
+
+  size_t offset_heaps_slot_limit;
+  size_t offset_heaps_slot_slot;
+
+  size_t offset_BLOCK_body;
+  size_t offset_BLOCK_var;
+  size_t offset_BLOCK_cref;
+  size_t offset_BLOCK_prev;
+  size_t offset_BLOCK_self;
+  size_t offset_BLOCK_klass;
+  size_t offset_BLOCK_wrapper;
+  size_t offset_BLOCK_orig_thread;
+  size_t offset_BLOCK_block_obj;
+  size_t offset_BLOCK_scope;
+  size_t offset_BLOCK_dyna_vars;
+
+  size_t offset_METHOD_klass;
+  size_t offset_METHOD_rklass;
+  size_t offset_METHOD_recv;
+  size_t offset_METHOD_id;
+  size_t offset_METHOD_oid;
+  size_t offset_METHOD_body;
+
   size_t pagesize;
 };
 
