@@ -1156,6 +1156,36 @@ init_memprof_config_extended() {
 #else
   memprof_config.offset_BLOCK_dyna_vars     = bin_type_member_offset("BLOCK", "dyna_vars");
 #endif
+#ifdef offset__METHOD__klass
+  memprof_config.offset_METHOD_klass        = offset__METHOD__klass;
+#else
+  memprof_config.offset_METHOD_klass        = bin_type_member_offset("METHOD", "klass");
+#endif
+#ifdef offset__METHOD__rklass
+  memprof_config.offset_METHOD_rklass       = offset__METHOD__rklass;
+#else
+  memprof_config.offset_METHOD_rklass       = bin_type_member_offset("METHOD", "rklass");
+#endif
+#ifdef offset__METHOD__recv
+  memprof_config.offset_METHOD_recv         = offset__METHOD__recv;
+#else
+  memprof_config.offset_METHOD_recv         = bin_type_member_offset("METHOD", "recv");
+#endif
+#ifdef offset__METHOD__id
+  memprof_config.offset_METHOD_id           = offset__METHOD__id;
+#else
+  memprof_config.offset_METHOD_id           = bin_type_member_offset("METHOD", "id");
+#endif
+#ifdef offset__METHOD__oid
+  memprof_config.offset_METHOD_oid          = offset__METHOD__oid;
+#else
+  memprof_config.offset_METHOD_oid          = bin_type_member_offset("METHOD", "oid");
+#endif
+#ifdef offset__METHOD__body
+  memprof_config.offset_METHOD_body         = offset__METHOD__body;
+#else
+  memprof_config.offset_METHOD_body         = bin_type_member_offset("METHOD", "body");
+#endif
 
   int heap_errors_printed = 0;
 
