@@ -1034,6 +1034,65 @@ memprof_dump_globals(yajl_gen gen)
   yajl_gen_map_close(gen);
 
   yajl_gen_map_close(gen);
+  yajl_gen_reset(gen);
+}
+
+static void
+memprof_dump_stack_frame(yajl_gen gen, struct FRAME *frame)
+{
+  yajl_gen_map_open(gen);
+
+  yajl_gen_cstr(gen, "_id");
+  yajl_gen_pointer(gen, frame);
+
+  yajl_gen_cstr(gen, "type");
+  yajl_gen_cstr(gen, "frame");
+
+  yajl_gen_cstr(gen, "self");
+  yajl_gen_value(gen, frame->self);
+
+  if (frame->last_class) {
+    yajl_gen_cstr(gen, "last_class");
+    yajl_gen_value(gen, frame->last_class);
+  }
+
+  if (frame->last_func) {
+    yajl_gen_cstr(gen, "last_func");
+    yajl_gen_id(gen, frame->last_func);
+  }
+
+  if (frame->orig_func) {
+    yajl_gen_cstr(gen, "orig_func");
+    yajl_gen_id(gen, frame->orig_func);
+  }
+
+  if (frame->node) {
+    yajl_gen_cstr(gen, "node");
+    yajl_gen_pointer(gen, (void*)frame->node);
+  }
+
+  if (frame->prev) {
+    yajl_gen_cstr(gen, "prev");
+    yajl_gen_pointer(gen, (void*)frame->prev);
+  }
+
+  if (frame->tmp) {
+    yajl_gen_cstr(gen, "tmp");
+    yajl_gen_pointer(gen, (void*)frame->tmp);
+  }
+
+  yajl_gen_map_close(gen);
+  yajl_gen_reset(gen);
+
+  if (frame->prev) {
+    memprof_dump_stack_frame(gen, frame->prev);
+  }
+}
+
+static void
+memprof_dump_stack(yajl_gen gen)
+{
+  memprof_dump_stack_frame(gen, ruby_frame);
 }
 
 static void
@@ -1115,7 +1174,7 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   track_objs = 0;
 
   memprof_dump_globals(gen);
-  yajl_gen_reset(gen);
+  memprof_dump_stack(gen);
 
   for (i=0; i < heaps_used; i++) {
     p = *(char**)(heaps + (i * memprof_config.sizeof_heaps_slot) + memprof_config.offset_heaps_slot_slot);
