@@ -1015,8 +1015,8 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
       memprof_config.heaps_used == NULL ||
       memprof_config.sizeof_RVALUE == 0 ||
       memprof_config.sizeof_heaps_slot == 0 ||
-      memprof_config.offset_heaps_slot_slot == -1 ||
-      memprof_config.offset_heaps_slot_limit == -1)
+      memprof_config.offset_heaps_slot_slot == SIZE_MAX ||
+      memprof_config.offset_heaps_slot_limit == SIZE_MAX)
     rb_raise(eUnsupported, "not enough config data to dump heap");
 
   char *heaps = *(char**)memprof_config.heaps;
@@ -1092,8 +1092,8 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
 static void
 init_memprof_config_base() {
   memset(&memprof_config, 0, sizeof(memprof_config));
-  memprof_config.offset_heaps_slot_limit = -1;
-  memprof_config.offset_heaps_slot_slot = -1;
+  memprof_config.offset_heaps_slot_limit = SIZE_MAX;
+  memprof_config.offset_heaps_slot_slot = SIZE_MAX;
   memprof_config.pagesize = getpagesize();
   assert(memprof_config.pagesize);
 }
@@ -1252,10 +1252,10 @@ init_memprof_config_extended() {
   if (memprof_config.sizeof_heaps_slot == 0)
     heap_errors_printed += fprintf(stderr,
       "Failed to determine sizeof(heaps_slot)\n");
-  if (memprof_config.offset_heaps_slot_limit == -1)
+  if (memprof_config.offset_heaps_slot_limit == SIZE_MAX)
     heap_errors_printed += fprintf(stderr,
       "Failed to determine offset of heaps_slot->limit\n");
-  if (memprof_config.offset_heaps_slot_slot == -1)
+  if (memprof_config.offset_heaps_slot_slot == SIZE_MAX)
     heap_errors_printed += fprintf(stderr,
       "Failed to determine offset of heaps_slot->slot\n");
 
