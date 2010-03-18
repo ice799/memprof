@@ -1056,15 +1056,16 @@ memprof_dump_stack_frame(yajl_gen gen, struct FRAME *frame)
     yajl_gen_value(gen, frame->last_class);
   }
 
-  if (frame->last_func) {
-    yajl_gen_cstr(gen, "last_func");
-    yajl_gen_id(gen, frame->last_func);
-  }
-
   if (frame->orig_func) {
     yajl_gen_cstr(gen, "orig_func");
     yajl_gen_id(gen, frame->orig_func);
   }
+
+  if (frame->last_func && frame->last_func != frame->orig_func) {
+    yajl_gen_cstr(gen, "last_func");
+    yajl_gen_id(gen, frame->last_func);
+  }
+
 
   if (frame->node) {
     yajl_gen_cstr(gen, "node");
