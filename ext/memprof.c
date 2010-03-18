@@ -753,6 +753,7 @@ obj_dump(VALUE obj, yajl_gen gen)
         case NODE_VCALL:
         case NODE_COLON2:
         case NODE_COLON3:
+        case NODE_BACK_REF:
           PRINT_ID(u2);
           break;
 
