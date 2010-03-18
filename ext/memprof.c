@@ -453,7 +453,7 @@ obj_dump(VALUE obj, yajl_gen gen)
     yajl_gen_cstr(gen, "line");
     yajl_gen_integer(gen, tracker->line);
     yajl_gen_cstr(gen, "time");
-    yajl_gen_integer(gen, (tracker->time[0].tv_usec * 1000000) + tracker->time[0].tv_usec);
+    yajl_gen_integer(gen, (tracker->time[0].tv_sec * 1000000) + tracker->time[0].tv_usec);
   }
 
   yajl_gen_cstr(gen, "type");
