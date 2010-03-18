@@ -480,8 +480,10 @@ nd_type_str(VALUE obj)
 }
 
 static VALUE (*rb_classname)(VALUE);
+static double (*rb_timeofday)();
 static RUBY_DATA_FUNC *rb_bm_mark;
 static RUBY_DATA_FUNC *rb_blk_free;
+static RUBY_DATA_FUNC *rb_thread_mark;
 
 /* TODO
  *  look for FL_EXIVAR flag and print ivars
@@ -645,6 +647,111 @@ obj_dump(VALUE obj, yajl_gen gen)
           yajl_gen_cstr(gen, "oid");
           yajl_gen_id(gen, id);
         }
+
+      } else if (RDATA(obj)->dmark == (RUBY_DATA_FUNC)rb_thread_mark) {
+        rb_thread_t th = (rb_thread_t)DATA_PTR(obj);
+
+        if (th == rb_curr_thread) {
+          yajl_gen_cstr(gen, "current");
+          yajl_gen_bool(gen, 1);
+        } else {
+          if (th->dyna_vars) {
+            yajl_gen_cstr(gen, "varmap");
+            yajl_gen_pointer(gen, th->dyna_vars);
+          }
+
+          yajl_gen_cstr(gen, "node");
+          yajl_gen_pointer(gen, th->node);
+
+          yajl_gen_cstr(gen, "cref");
+          yajl_gen_pointer(gen, th->cref);
+
+          char *status;
+          switch (th->status) {
+            case THREAD_TO_KILL:
+              status = "to_kill";
+              break;
+            case THREAD_RUNNABLE:
+              status = "runnable";
+              break;
+            case THREAD_STOPPED:
+              status = "stopped";
+              break;
+            case THREAD_KILLED:
+              status = "killed";
+              break;
+            default:
+              status = "unknown";
+          }
+
+          yajl_gen_cstr(gen, "status");
+          yajl_gen_cstr(gen, status);
+
+          #define WAIT_FD		(1<<0)
+          #define WAIT_SELECT	(1<<1)
+          #define WAIT_TIME	(1<<2)
+          #define WAIT_JOIN	(1<<3)
+          #define WAIT_PID	(1<<4)
+
+          yajl_gen_cstr(gen, "wait_for");
+          yajl_gen_array_open(gen);
+          if (th->wait_for & WAIT_FD)
+            yajl_gen_cstr(gen, "fd");
+          if (th->wait_for & WAIT_SELECT)
+            yajl_gen_cstr(gen, "select");
+          if (th->wait_for & WAIT_TIME)
+            yajl_gen_cstr(gen, "time");
+          if (th->wait_for & WAIT_JOIN)
+            yajl_gen_cstr(gen, "join");
+          if (th->wait_for & WAIT_PID)
+            yajl_gen_cstr(gen, "pid");
+          yajl_gen_array_close(gen);
+
+          if (th->wait_for & WAIT_FD) {
+            yajl_gen_cstr(gen, "fd");
+            yajl_gen_integer(gen, th->fd);
+          }
+
+          #define DELAY_INFTY 1E30
+
+          if (th->wait_for & WAIT_TIME) {
+            yajl_gen_cstr(gen, "delay");
+            if (th->delay == DELAY_INFTY)
+              yajl_gen_cstr(gen, "infinity");
+            else
+              yajl_gen_double(gen, th->delay - rb_timeofday());
+          }
+
+          if (th->wait_for & WAIT_JOIN) {
+            yajl_gen_cstr(gen, "join");
+            yajl_gen_value(gen, th->join->thread);
+          }
+        }
+
+        yajl_gen_cstr(gen, "priority");
+        yajl_gen_integer(gen, th->priority);
+
+        if (th == rb_main_thread) {
+          yajl_gen_cstr(gen, "main");
+          yajl_gen_bool(gen, 1);
+        }
+
+        if (th->next && th->next != rb_main_thread) {
+          yajl_gen_cstr(gen, "next");
+          yajl_gen_value(gen, th->next->thread);
+        }
+        if (th->prev && (th->prev == rb_main_thread || th->prev != th->next)) {
+          yajl_gen_cstr(gen, "prev");
+          yajl_gen_value(gen, th->prev->thread);
+        }
+
+        if (th->locals) {
+          yajl_gen_cstr(gen, "variables");
+          yajl_gen_map_open(gen);
+          st_foreach(th->locals, each_ivar, (st_data_t)gen);
+          yajl_gen_map_close(gen);
+        }
+
       }
       break;
 
@@ -1066,7 +1173,6 @@ memprof_dump_stack_frame(yajl_gen gen, struct FRAME *frame)
     yajl_gen_id(gen, frame->last_func);
   }
 
-
   if (frame->node) {
     yajl_gen_cstr(gen, "node");
     yajl_gen_pointer(gen, (void*)frame->node);
@@ -1239,8 +1345,10 @@ init_memprof_config_extended() {
   }
 
   memprof_config.classname                  = bin_find_symbol("classname", NULL);
+  memprof_config.timeofday                  = bin_find_symbol("timeofday", NULL);
   memprof_config.bm_mark                    = bin_find_symbol("bm_mark", NULL);
   memprof_config.blk_free                   = bin_find_symbol("blk_free", NULL);
+  memprof_config.thread_mark                = bin_find_symbol("thread_mark", NULL);
   memprof_config.rb_mark_table_add_filename = bin_find_symbol("rb_mark_table_add_filename", NULL);
 
   /* Stuff for dumping the heap */
@@ -1446,8 +1554,10 @@ Init_memprof()
 
   rb_classname = memprof_config.classname;
   rb_add_freelist = memprof_config.add_freelist;
+  rb_timeofday = memprof_config.timeofday;
   rb_bm_mark = memprof_config.bm_mark;
   rb_blk_free = memprof_config.blk_free;
+  rb_thread_mark = memprof_config.thread_mark;
   ptr_to_rb_mark_table_add_filename = memprof_config.rb_mark_table_add_filename;
 
   assert(rb_classname);
