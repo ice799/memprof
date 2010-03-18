@@ -979,6 +979,26 @@ globals_each_dump(st_data_t key, st_data_t record, st_data_t arg)
 }
 
 static void
+memprof_dump_globals(yajl_gen gen)
+{
+  yajl_gen_map_open(gen);
+
+  yajl_gen_cstr(gen, "_id");
+  yajl_gen_cstr(gen, "globals");
+
+  yajl_gen_cstr(gen, "type");
+  yajl_gen_cstr(gen, "globals");
+
+  yajl_gen_cstr(gen, "variables");
+
+  yajl_gen_map_open(gen);
+  st_foreach(rb_global_tbl, globals_each_dump, (st_data_t)gen);
+  yajl_gen_map_close(gen);
+
+  yajl_gen_map_close(gen);
+}
+
+static void
 json_print(void *ctx, const char * str, unsigned int len)
 {
   FILE *out = (FILE *)ctx;
@@ -1058,21 +1078,7 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
 
   //yajl_gen_array_open(gen);
 
-  yajl_gen_map_open(gen);
-
-  yajl_gen_cstr(gen, "_id");
-  yajl_gen_cstr(gen, "globals");
-
-  yajl_gen_cstr(gen, "type");
-  yajl_gen_cstr(gen, "globals");
-
-  yajl_gen_cstr(gen, "variables");
-
-  yajl_gen_map_open(gen);
-  st_foreach(rb_global_tbl, globals_each_dump, (st_data_t)gen);
-  yajl_gen_map_close(gen);
-
-  yajl_gen_map_close(gen);
+  memprof_dump_globals(gen);
 
   for (i=0; i < heaps_used; i++) {
     p = *(char**)(heaps + (i * memprof_config.sizeof_heaps_slot) + memprof_config.offset_heaps_slot_slot);
