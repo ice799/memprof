@@ -4,14 +4,14 @@
 #define _GNU_SOURCE
 #endif
 
-#include <fcntl.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <assert.h>
 #include <err.h>
+#include <fcntl.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include <sysexits.h>
 
 #include <st.h>
@@ -22,7 +22,6 @@
 #include "bin_api.h"
 #include "tramp.h"
 #include "util.h"
-
 
 /*
  * bleak_house stuff
@@ -37,6 +36,8 @@ struct obj_track {
   VALUE obj;
   char *source;
   int line;
+  int len;
+  struct timeval time[];
 };
 
 static VALUE gc_hook;
@@ -92,7 +93,7 @@ newobj_tramp()
   struct obj_track *tracker = NULL;
 
   if (track_objs && objs) {
-    tracker = malloc(sizeof(*tracker));
+    tracker = malloc(sizeof(*tracker) + sizeof(struct timeval));
 
     if (tracker) {
       if (ruby_current_node && ruby_current_node->nd_file &&
@@ -108,6 +109,13 @@ newobj_tramp()
       }
 
       tracker->obj = ret;
+      tracker->len = 1;
+
+      /* TODO a way for the user to disallow time tracking */
+      if (gettimeofday(&tracker->time[0], NULL) == -1) {
+        perror("gettimeofday failed. Continuing anyway, error");
+      }
+
       rb_gc_disable();
       st_insert(objs, (st_data_t)ret, (st_data_t)tracker);
       rb_gc_enable();
@@ -444,6 +452,8 @@ obj_dump(VALUE obj, yajl_gen gen)
     yajl_gen_cstr(gen, tracker->source);
     yajl_gen_cstr(gen, "line");
     yajl_gen_integer(gen, tracker->line);
+    yajl_gen_cstr(gen, "time");
+    yajl_gen_integer(gen, (tracker->time[0].tv_usec * 1000000) + tracker->time[0].tv_usec);
   }
 
   yajl_gen_cstr(gen, "type");
