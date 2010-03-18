@@ -315,6 +315,44 @@ memprof_track(int argc, VALUE *argv, VALUE self)
 #include "env.h"
 #include "re.h"
 
+/* HAX: copied from internal yajl_gen.c (PATCH yajl before building instead)
+ */
+
+typedef enum {
+    yajl_gen_start,
+    yajl_gen_map_start,
+    yajl_gen_map_key,
+    yajl_gen_map_val,
+    yajl_gen_array_start,
+    yajl_gen_in_array,
+    yajl_gen_complete,
+    yajl_gen_error
+} yajl_gen_state;
+
+struct yajl_gen_t
+{
+    unsigned int depth;
+    unsigned int pretty;
+    const char * indentString;
+    yajl_gen_state state[YAJL_MAX_DEPTH];
+    yajl_print_t print;
+    void * ctx; /* yajl_buf */
+    /* memory allocation routines */
+    yajl_alloc_funcs alloc;
+};
+
+static void
+yajl_gen_reset(yajl_gen gen)
+{
+  yajl_gen_clear(gen);
+  assert (gen->state[gen->depth] == yajl_gen_complete);
+  gen->state[gen->depth] = yajl_gen_start;
+  gen->print(gen->ctx, "\n", 1);
+}
+
+/* END HAX
+ */
+
 static yajl_gen_status
 yajl_gen_cstr(yajl_gen gen, const char * str)
 {
@@ -1076,9 +1114,8 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
 
   track_objs = 0;
 
-  //yajl_gen_array_open(gen);
-
   memprof_dump_globals(gen);
+  yajl_gen_reset(gen);
 
   for (i=0; i < heaps_used; i++) {
     p = *(char**)(heaps + (i * memprof_config.sizeof_heaps_slot) + memprof_config.offset_heaps_slot_slot);
@@ -1088,18 +1125,13 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
     while (p < pend) {
       if (RBASIC(p)->flags) {
         obj_dump((VALUE)p, gen);
-        // XXX ugh
-        yajl_gen_clear(gen);
-        yajl_gen_free(gen);
-        gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)out);
-        while(fputc('\n', out ? out : stdout) == EOF);
+        yajl_gen_reset(gen);
       }
 
       p += memprof_config.sizeof_RVALUE;
     }
   }
 
-  //yajl_gen_array_close(gen);
   yajl_gen_clear(gen);
   yajl_gen_free(gen);
 
