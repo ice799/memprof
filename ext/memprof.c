@@ -344,6 +344,21 @@ yajl_gen_format(yajl_gen gen, char *format, ...)
 }
 
 static yajl_gen_status
+yajl_gen_id(yajl_gen gen, ID id)
+{
+  if (id)
+    return yajl_gen_format(gen, ":%s", id == 95 ? "_" : rb_id2name(id));
+  else
+    return yajl_gen_null(gen);
+}
+
+static yajl_gen_status
+yajl_gen_pointer(yajl_gen gen, void* ptr)
+{
+  return yajl_gen_format(gen, "0x%x", ptr);
+}
+
+static yajl_gen_status
 yajl_gen_value(yajl_gen gen, VALUE obj)
 {
   if (FIXNUM_P(obj))
@@ -355,9 +370,9 @@ yajl_gen_value(yajl_gen gen, VALUE obj)
   else if (obj == Qfalse)
     return yajl_gen_bool(gen, 0);
   else if (SYMBOL_P(obj))
-    return yajl_gen_format(gen, ":%s", rb_id2name(SYM2ID(obj)));
+    return yajl_gen_id(gen, SYM2ID(obj));
   else
-    return yajl_gen_format(gen, "0x%x", obj);
+    return yajl_gen_pointer(gen, (void*)obj);
 }
 
 static int
@@ -475,7 +490,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
       if (DATA_PTR(obj)) {
         yajl_gen_cstr(gen, "data");
-        yajl_gen_format(gen, "0x%x", DATA_PTR(obj));
+        yajl_gen_pointer(gen, DATA_PTR(obj));
       }
 
       if (RDATA(obj)->dfree == (RUBY_DATA_FUNC)rb_blk_free) {
@@ -485,31 +500,31 @@ obj_dump(VALUE obj, yajl_gen gen)
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_body);
         if (val) {
           yajl_gen_cstr(gen, "nd_body");
-          yajl_gen_format(gen, "0x%x", val);
+          yajl_gen_pointer(gen, val);
         }
 
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_var);
         if (val) {
           yajl_gen_cstr(gen, "nd_var");
-          yajl_gen_format(gen, "0x%x", val);
+          yajl_gen_pointer(gen, val);
         }
 
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_cref);
         if (val) {
           yajl_gen_cstr(gen, "nd_cref");
-          yajl_gen_format(gen, "0x%x", val);
+          yajl_gen_pointer(gen, val);
         }
 
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_dyna_vars);
         if (val) {
           yajl_gen_cstr(gen, "vars");
-          yajl_gen_format(gen, "0x%x", val);
+          yajl_gen_pointer(gen, val);
         }
 
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_scope);
         if (val) {
           yajl_gen_cstr(gen, "scope");
-          yajl_gen_format(gen, "0x%x", val);
+          yajl_gen_pointer(gen, val);
         }
 
         ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_BLOCK_self);
@@ -544,7 +559,7 @@ obj_dump(VALUE obj, yajl_gen gen)
         yajl_gen_array_open(gen);
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_prev);
         while (val) {
-          yajl_gen_format(gen, "0x%x", val);
+          yajl_gen_pointer(gen, val);
           prev = val;
           val = *(void**)(ptr + memprof_config.offset_BLOCK_prev);
           if (prev == val)
@@ -584,13 +599,13 @@ obj_dump(VALUE obj, yajl_gen gen)
         mid = *(ID*)(DATA_PTR(obj) + memprof_config.offset_METHOD_id);
         if (mid) {
           yajl_gen_cstr(gen, "mid");
-          yajl_gen_format(gen, ":%s", rb_id2name(mid));
+          yajl_gen_id(gen, mid);
         }
 
         id = *(ID*)(DATA_PTR(obj) + memprof_config.offset_METHOD_oid);
         if (id && id != mid) {
           yajl_gen_cstr(gen, "oid");
-          yajl_gen_format(gen, ":%s", rb_id2name(id));
+          yajl_gen_id(gen, id);
         }
       }
       break;
@@ -671,7 +686,7 @@ obj_dump(VALUE obj, yajl_gen gen)
             if (!rb_is_local_id(scope->local_tbl[i]))
               continue;
 
-            yajl_gen_cstr(gen, scope->local_tbl[i] == 95 ? "_" : rb_id2name(scope->local_tbl[i]));
+            yajl_gen_id(gen, scope->local_tbl[i]);
             yajl_gen_value(gen, cur);
           }
           yajl_gen_map_close(gen);
@@ -694,7 +709,7 @@ obj_dump(VALUE obj, yajl_gen gen)
       yajl_gen_cstr(gen, "node_code");
       yajl_gen_integer(gen, nd_type(obj));
 
-      #define PRINT_ID(sub) yajl_gen_format(gen, ":%s", rb_id2name(RNODE(obj)->sub.id));
+      #define PRINT_ID(sub) yajl_gen_id(gen, RNODE(obj)->sub.id);
       #define PRINT_VAL(sub) yajl_gen_value(gen, RNODE(obj)->sub.value);
 
       int nd_type = nd_type(obj);
@@ -726,7 +741,7 @@ obj_dump(VALUE obj, yajl_gen gen)
             int i = 3;
 
             for (; i < size+1; i++) {
-              yajl_gen_cstr(gen, tbl[i] == 95 ? "_" : rb_id2name(tbl[i]));
+              yajl_gen_id(gen, tbl[i]);
             }
           }
           yajl_gen_array_close(gen);
@@ -822,7 +837,7 @@ obj_dump(VALUE obj, yajl_gen gen)
       if (vars->id) {
         yajl_gen_cstr(gen, "data");
         yajl_gen_map_open(gen);
-        yajl_gen_cstr(gen, rb_id2name(vars->id));
+        yajl_gen_id(gen, vars->id);
         yajl_gen_value(gen, vars->val);
         yajl_gen_map_close(gen);
       }
@@ -958,7 +973,7 @@ extern st_table *rb_global_tbl;
 static int
 globals_each_dump(st_data_t key, st_data_t record, st_data_t arg)
 {
-  yajl_gen_cstr((yajl_gen)arg, rb_id2name((ID)key));
+  yajl_gen_id((yajl_gen)arg, (ID)key);
   yajl_gen_value((yajl_gen)arg, rb_gvar_get((void*)record));
   return ST_CONTINUE;
 }
