@@ -743,7 +743,7 @@ obj_dump(VALUE obj, yajl_gen gen)
           yajl_gen_cstr(gen, "next");
           yajl_gen_value(gen, th->next->thread);
         }
-        if (th->prev && (th->prev == rb_main_thread || th->prev != th->next)) {
+        if (th->prev && th->prev != th && (th->prev == rb_main_thread || th->prev != th->next)) {
           yajl_gen_cstr(gen, "prev");
           yajl_gen_value(gen, th->prev->thread);
         }
