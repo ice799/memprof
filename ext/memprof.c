@@ -384,9 +384,12 @@ yajl_gen_format(yajl_gen gen, char *format, ...)
 static yajl_gen_status
 yajl_gen_id(yajl_gen gen, ID id)
 {
-  if (id)
-    return yajl_gen_format(gen, ":%s", id == 95 ? "_" : rb_id2name(id));
-  else
+  if (id) {
+    if (id < 100)
+      return yajl_gen_format(gen, ":%c", id);
+    else
+      return yajl_gen_format(gen, ":%s", rb_id2name(id));
+  } else
     return yajl_gen_null(gen);
 }
 
@@ -854,8 +857,8 @@ obj_dump(VALUE obj, yajl_gen gen)
       yajl_gen_cstr(gen, "node_code");
       yajl_gen_integer(gen, nd_type(obj));
 
-      #define PRINT_ID(sub) yajl_gen_id(gen, RNODE(obj)->sub.id);
-      #define PRINT_VAL(sub) yajl_gen_value(gen, RNODE(obj)->sub.value);
+      #define PRINT_ID(sub) yajl_gen_id(gen, RNODE(obj)->sub.id)
+      #define PRINT_VAL(sub) yajl_gen_value(gen, RNODE(obj)->sub.value)
 
       int nd_type = nd_type(obj);
       yajl_gen_cstr(gen, "n1");
@@ -875,7 +878,16 @@ obj_dump(VALUE obj, yajl_gen gen)
         case NODE_GASGN:
         case NODE_DASGN_CURR:
         case NODE_BLOCK_ARG:
+        case NODE_CDECL:
+        case NODE_VALIAS:
           PRINT_ID(u1);
+          break;
+
+        case NODE_OP_ASGN2:
+          if (RNODE(obj)->u3.id > 1000000)
+            PRINT_VAL(u1);
+          else
+            PRINT_ID(u1);
           break;
 
         case NODE_SCOPE: {
@@ -893,6 +905,7 @@ obj_dump(VALUE obj, yajl_gen gen)
           break;
         }
 
+        case NODE_IFUNC:
         case NODE_CFUNC: {
           const char *name = bin_find_symbol_name((void*)RNODE(obj)->u1.value);
           yajl_gen_format(gen, "0x%x: %s", RNODE(obj)->u1.value, name ? name : "???");
@@ -914,6 +927,8 @@ obj_dump(VALUE obj, yajl_gen gen)
         case NODE_COLON2:
         case NODE_COLON3:
         case NODE_BACK_REF:
+        case NODE_DEFS:
+        case NODE_VALIAS:
           PRINT_ID(u2);
           break;
 
@@ -926,9 +941,33 @@ obj_dump(VALUE obj, yajl_gen gen)
             PRINT_ID(u2);
           break;
 
+        case NODE_OP_ASGN2:
+          if (RNODE(obj)->u3.id > 1000000) {
+            PRINT_VAL(u2);
+          } else {
+            if (RNODE(obj)->nd_mid == 0)
+              yajl_gen_cstr(gen, ":||");
+            else if (RNODE(obj)->nd_mid == 1)
+              yajl_gen_cstr(gen, ":&&");
+            else
+              PRINT_ID(u2);
+          }
+          break;
+
+        case NODE_DREGX:
+        case NODE_DREGX_ONCE:
         case NODE_NTH_REF:
+        case NODE_IFUNC:
         case NODE_CFUNC:
           yajl_gen_integer(gen, RNODE(obj)->u2.argc);
+          break;
+
+        case NODE_BLOCK:
+        case NODE_ARRAY:
+          if (RNODE(obj)->u2.node == RNODE(obj))
+            yajl_gen_null(gen);
+          else
+            PRINT_VAL(u2);
           break;
 
         default:
@@ -939,6 +978,13 @@ obj_dump(VALUE obj, yajl_gen gen)
       switch(nd_type) {
         case NODE_ARGS:
           yajl_gen_integer(gen, RNODE(obj)->u3.cnt);
+          break;
+
+        case NODE_OP_ASGN2:
+          if (RNODE(obj)->u3.id > 1000000)
+            PRINT_VAL(u3);
+          else
+            PRINT_ID(u3);
           break;
 
         default:
