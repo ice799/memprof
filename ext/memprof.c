@@ -1108,7 +1108,7 @@ obj_dump(VALUE obj, yajl_gen gen)
         yajl_gen_map_close(gen);
       }
 
-      if (type != T_ICLASS && RCLASS(obj)->m_tbl && RCLASS(obj)->m_tbl->num_entries) {
+      if (RCLASS(obj)->m_tbl && RCLASS(obj)->m_tbl->num_entries) {
         yajl_gen_cstr(gen, "methods");
         yajl_gen_map_open(gen);
         st_foreach(RCLASS(obj)->m_tbl, each_ivar, (st_data_t)gen);
