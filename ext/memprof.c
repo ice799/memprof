@@ -996,6 +996,7 @@ obj_dump(VALUE obj, yajl_gen gen)
         case NODE_NTH_REF:
         case NODE_IFUNC:
         case NODE_CFUNC:
+        case NODE_NEWLINE:
           yajl_gen_integer(gen, RNODE(obj)->u2.argc);
           break;
 
