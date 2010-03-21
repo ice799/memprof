@@ -28,9 +28,24 @@
  */
 static VALUE eUnsupported;
 static int track_objs = 0;
+static int memprof_started = 0;
 static st_table *objs = NULL;
 
+/*
+ * stuff needed for heap dumping
+ */
+static VALUE (*rb_classname)(VALUE);
+static double (*rb_timeofday)();
+static RUBY_DATA_FUNC *rb_bm_mark;
+static RUBY_DATA_FUNC *rb_blk_free;
+static RUBY_DATA_FUNC *rb_thread_mark;
 struct memprof_config memprof_config;
+
+/*
+ * memprof config struct init
+ */
+static void init_memprof_config_base();
+static void init_memprof_config_extended();
 
 struct obj_track {
   VALUE obj;
@@ -217,6 +232,31 @@ objs_to_array(st_data_t key, st_data_t record, st_data_t arg)
 static VALUE
 memprof_start(VALUE self)
 {
+  if (!memprof_started) {
+    objs = st_init_numtable();
+    init_memprof_config_base();
+    bin_init();
+    init_memprof_config_extended();
+    create_tramp_table();
+
+    gc_hook = Data_Wrap_Struct(rb_cObject, sourcefile_marker, NULL, NULL);
+    rb_global_variable(&gc_hook);
+
+    rb_classname = memprof_config.classname;
+    rb_add_freelist = memprof_config.add_freelist;
+    rb_timeofday = memprof_config.timeofday;
+    rb_bm_mark = memprof_config.bm_mark;
+    rb_blk_free = memprof_config.blk_free;
+    rb_thread_mark = memprof_config.thread_mark;
+    ptr_to_rb_mark_table_add_filename = memprof_config.rb_mark_table_add_filename;
+
+    assert(rb_classname);
+
+    insert_tramp("rb_newobj", newobj_tramp);
+    insert_tramp("add_freelist", freelist_tramp);
+    memprof_started = 1;
+  }
+
   if (track_objs == 1)
     return Qfalse;
 
@@ -227,6 +267,8 @@ memprof_start(VALUE self)
 static VALUE
 memprof_stop(VALUE self)
 {
+  /* TODO: remove trampolines and set memprof_started = 0 */
+
   if (track_objs == 0)
     return Qfalse;
 
@@ -482,11 +524,6 @@ nd_type_str(VALUE obj)
   }
 }
 
-static VALUE (*rb_classname)(VALUE);
-static double (*rb_timeofday)();
-static RUBY_DATA_FUNC *rb_bm_mark;
-static RUBY_DATA_FUNC *rb_blk_free;
-static RUBY_DATA_FUNC *rb_thread_mark;
 
 /* TODO
  *  look for FL_EXIVAR flag and print ivars
@@ -1589,30 +1626,6 @@ Init_memprof()
   rb_define_singleton_method(memprof, "dump", memprof_dump, -1);
   rb_define_singleton_method(memprof, "dump_all", memprof_dump_all, -1);
 
-  objs = st_init_numtable();
-  init_memprof_config_base();
-  bin_init();
-  init_memprof_config_extended();
-  create_tramp_table();
-
-  gc_hook = Data_Wrap_Struct(rb_cObject, sourcefile_marker, NULL, NULL);
-  rb_global_variable(&gc_hook);
-
-  rb_classname = memprof_config.classname;
-  rb_add_freelist = memprof_config.add_freelist;
-  rb_timeofday = memprof_config.timeofday;
-  rb_bm_mark = memprof_config.bm_mark;
-  rb_blk_free = memprof_config.blk_free;
-  rb_thread_mark = memprof_config.thread_mark;
-  ptr_to_rb_mark_table_add_filename = memprof_config.rb_mark_table_add_filename;
-
-  assert(rb_classname);
-
-  insert_tramp("rb_newobj", newobj_tramp);
-  insert_tramp("add_freelist", freelist_tramp);
-
-  if (getenv("MEMPROF"))
-    track_objs = 1;
 
   return;
 }
