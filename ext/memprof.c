@@ -524,7 +524,6 @@ nd_type_str(VALUE obj)
   }
 }
 
-
 /* TODO
  *  look for FL_EXIVAR flag and print ivars
  *  print more detail about Proc/struct BLOCK in T_DATA if freefunc == blk_free
@@ -1632,7 +1631,4 @@ Init_memprof()
   rb_define_singleton_method(memprof, "track", memprof_track, -1);
   rb_define_singleton_method(memprof, "dump", memprof_dump, -1);
   rb_define_singleton_method(memprof, "dump_all", memprof_dump_all, -1);
-
-
-  return;
 }
