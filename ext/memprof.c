@@ -807,6 +807,12 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     case T_FILE:
       yajl_gen_cstr(gen, "file");
+
+      VALUE fileno = rb_funcall(obj, rb_intern("fileno"), 0);
+      if (RTEST(fileno)) {
+        yajl_gen_cstr(gen, "fileno");
+        yajl_gen_integer(gen, FIX2INT(fileno));
+      }
       break;
 
     case T_FLOAT:
