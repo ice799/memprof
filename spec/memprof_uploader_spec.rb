@@ -44,28 +44,6 @@ describe "MemprofUploader" do
     $?.exitstatus.should == 1
   end
 
-  it "should fail after 15 seconds if an IN_PROGRESS dump does not complete" do
-    pid = fork {
-      # create a fake file, which we will not rename.
-      filename = "/tmp/memprof-#{Process.pid}-#{Time.now.to_i}.json.IN_PROGRESS"
-      trap("INFO") { File.open(filename, "w") {|f| f.write("foo") } }
-      # should get signaled somewhere in here and execute the handler before exiting.
-      sleep 2
-      exit!
-      }
-    Process.detach(pid)
-    output = `ruby bin/memprof -p #{pid} -l Label -k abcdef -t`
-    output.should =~ Regexp.new("Waiting 5 seconds for process #{pid} to create a new dump...")
-    output.should =~ Regexp.new("Found file /tmp/memprof-#{pid}-\\d*.json\\.?\\w*")
-    output.should =~ Regexp.new("Dump in progress. Waiting 15 seconds for it to complete...")
-    output.should =~ Regexp.new("Timed out after waiting 15 seconds")
-    file = output.slice(Regexp.new("/tmp/memprof-#{pid}-\\d*.json\\.?\\w*"))
-    # uploader shouldn't have deleted the fake file.
-    File.exist?(file).should == true
-    File.delete(file)
-    $?.exitstatus.should == 1
-  end
-
   it "should WORK and wait for a dump to complete if it's IN_PROGRESS" do
     pid = fork {
       # create a fake file
@@ -82,7 +60,7 @@ describe "MemprofUploader" do
     output = `ruby bin/memprof -p #{pid} -l Label -k abcdef -t`
     output.should =~ Regexp.new("Waiting 5 seconds for process #{pid} to create a new dump...")
     output.should =~ Regexp.new("Found file /tmp/memprof-#{pid}-\\d*.json\\.?\\w*")
-    output.should =~ Regexp.new("Dump in progress. Waiting 15 seconds for it to complete...")
+    output.should =~ Regexp.new("Dump in progress. Waiting 60 seconds for it to complete...")
     output.should =~ Regexp.new("Finished!")
     file = output.slice(Regexp.new("/tmp/memprof-#{pid}-\\d*.json\\.?\\w*"))
     # make sure both files are gone

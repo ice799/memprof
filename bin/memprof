@@ -83,10 +83,10 @@ class MemprofUploader
 
     if file =~ /\.IN_PROGRESS/
       file = file.sub(/\.IN_PROGRESS/, "")
-      puts "Dump in progress. Waiting 15 seconds for it to complete..."
-      15.times do |i|
+      puts "Dump in progress. Waiting 60 seconds for it to complete..."
+      60.times do |i|
         sleep 1 unless File.exist?(file) and break
-        fail_with("Timed out after waiting 15 seconds") if i+1 == 15
+        fail_with("Timed out after waiting 60 seconds") if i+1 == 60
       end
     end
 
