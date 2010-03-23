@@ -1,0 +1,126 @@
+#!/usr/bin/env ruby
+
+require 'rubygems'
+require 'optparse'
+require 'restclient'
+
+MEMPROF_URL = "http://127.0.0.1:7006/upload"
+
+MEMPROF_BANNER = <<-EOF
+Memprof Uploader
+http://www.memprof.com
+======================
+
+EOF
+
+class MemprofUploader
+  def initialize(args=ARGV)
+    puts MEMPROF_BANNER
+
+    @parser = OptionParser.new do |opts|
+      opts.banner = "Usage:"
+      opts.on("-p", "--pid <pid>", Integer, "PID of the process to dump       (required)")      {|arg| @pid = arg }
+      opts.on("-l", "--label <label>",      "Label for your dump              (required)")      {|arg| @label = arg }
+      opts.on("-k", "--key <key>",          "Memprof.com API key              (required)")      {|arg| @key = arg }
+      opts.on("-d", "--[no-]delete",        "Delete dump file after uploading (default true)")  {|arg| @delete_dump = arg }
+      opts.on("-t", "--[no-]test",          "Test run (don't actually upload) (default false)") {|arg| @test = arg }
+    end
+
+    begin
+      @parser.parse!
+    rescue Exception => e
+      if e.kind_of?(SystemExit)
+        raise e
+      else
+        fail_with(e.message)
+      end
+    end
+
+    # Make this default to true if the user didn't pass any preference.
+    @delete_dump = true if @delete_dump.nil?
+
+    if @pid.nil?
+      fail_with("Missing PID!")
+    elsif @label.nil? || @label.empty?
+      fail_with("Missing label!")
+    elsif @key.nil? || @key.empty?
+      fail_with("Missing API key!")
+    end
+  end
+
+  def run!
+    dump_filename = get_dump_filename(@pid)
+
+    begin
+      upload_dump(dump_filename, @label, @key)
+    ensure
+      if @delete_dump
+        File.delete(dump_filename)
+        puts "\nDeleted dump file."
+      end
+    end
+
+    puts "Finished!"
+  end
+
+  private
+
+  def get_dump_filename(pid)
+    # Get a listing of files before we signal for the new dump
+    # We'll compare against this later to see which is the new file.
+    old_files = Dir.glob("/tmp/memprof-#{pid}-*")
+    signal_process(pid)
+    puts "Waiting 5 seconds for process #{pid} to create a new dump..."
+
+    file = nil
+
+    5.times do |i|
+      sleep 1 unless file = (Dir.glob("/tmp/memprof-#{pid}-*") - old_files).first and break
+      fail_with("Timed out after waiting 5 seconds") if i+1 == 5
+    end
+
+    puts "\nFound file #{file}"
+
+    if file =~ /\.IN_PROGRESS/
+      file = file.sub(/\.IN_PROGRESS/, "")
+      puts "Dump in progress. Waiting 15 seconds for it to complete..."
+      15.times do |i|
+        sleep 1 unless File.exist?(file) and break
+        fail_with("Timed out after waiting 15 seconds") if i+1 == 15
+      end
+    end
+
+    file
+  end
+
+  def upload_dump(filename, label, key)
+    return if @test
+
+    file = File.open(filename, "r")
+
+    puts "\nUploading to memprof.com..."
+    response = RestClient.post(MEMPROF_URL, :upload => file, :label => label, :key => key)
+
+    puts "Response from server:"
+    p response.to_s
+  end
+
+  def fail_with(str)
+    puts @parser.to_s
+    puts "\n" + str
+    puts "Exiting..."
+    exit(1)
+  end
+
+  def signal_process(pid)
+    begin
+      Process.kill("INFO", pid)
+    rescue Errno::ESRCH
+      fail_with("No such process #{pid}!")
+    end
+    puts "Signaled process #{pid} with SIGINFO"
+  end
+
+end
+
+MemprofUploader.new(ARGV).run!
