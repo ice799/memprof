@@ -65,7 +65,7 @@ describe "MemprofUploader" do
     file = output.slice(Regexp.new("/tmp/memprof-#{pid}-\\d*.json\\.?\\w*"))
     # make sure both files are gone
     File.exist?(file).should == false
-    File.exist?(file.sub(/\.IN_PROGRESS/, "")).should == false
+    File.exist?(file.sub(/\.IN_PROGRESS/, "") + ".gz").should == false
     $?.exitstatus.should == 0
   end
 
@@ -85,7 +85,7 @@ describe "MemprofUploader" do
     file = output.slice(Regexp.new("/tmp/memprof-#{pid}-\\d*.json\\.?\\w*"))
     # make sure both files are gone
     File.exist?(file).should == false
-    File.exist?(file.sub(/\.IN_PROGRESS/, "")).should == false
+    File.exist?(file.sub(/\.IN_PROGRESS/, "") + ".gz").should == false
     $?.exitstatus.should == 0
   end
 
@@ -108,9 +108,10 @@ describe "MemprofUploader" do
       File.exist?(file).should == false
     end
     # make sure it left the completed one
-    File.exist?(file.sub(/\.IN_PROGRESS/, "")).should == true
-    $?.exitstatus.should == 0
+    file = file.sub(/\.IN_PROGRESS/, "") + ".gz"
+    File.exist?(file).should == true
     File.delete(file)
+    $?.exitstatus.should == 0
   end
 
 end

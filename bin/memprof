@@ -49,7 +49,7 @@ class MemprofUploader
   end
 
   def run!
-    dump_filename = get_dump_filename(@pid)
+    dump_filename = compress_file(get_dump_filename(@pid))
 
     begin
       upload_dump(dump_filename, @label, @key)
@@ -64,6 +64,12 @@ class MemprofUploader
   end
 
   private
+
+  def compress_file(filename)
+    puts "Compressing with gzip..."
+    `gzip #{filename}`
+    "#{filename}.gz"
+  end
 
   def get_dump_filename(pid)
     # Get a listing of files before we signal for the new dump
