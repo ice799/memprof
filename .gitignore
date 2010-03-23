@@ -4,3 +4,7 @@
 Makefile
 *.dSYM
 *.log
+*.gem
+ext/dst/*
+ext/src/yajl-1.0.9/*
+
