@@ -1354,12 +1354,20 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   char *p, *pend;
   int i, limit;
   VALUE str;
+  char *filename = NULL;
+  char *in_progress_filename = NULL;
   FILE *out = NULL;
 
   rb_scan_args(argc, argv, "01", &str);
 
   if (RTEST(str)) {
-    out = fopen(StringValueCStr(str), "w");
+    filename = StringValueCStr(str);
+    size_t filename_len = strlen(filename);
+    in_progress_filename = alloca(filename_len + 13);
+    memcpy(in_progress_filename, filename, filename_len);
+    memcpy(in_progress_filename + filename_len, ".IN_PROGRESS\0", 13);
+
+    out = fopen(in_progress_filename, "w");
     if (!out)
       rb_raise(rb_eArgError, "unable to open output file");
   }
@@ -1390,8 +1398,10 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   yajl_gen_clear(gen);
   yajl_gen_free(gen);
 
-  if (out)
+  if (out) {
     fclose(out);
+    rename(in_progress_filename, filename);
+  }
 
   track_objs = 1;
 
