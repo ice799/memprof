@@ -704,7 +704,7 @@ obj_dump(VALUE obj, yajl_gen gen)
       }
 
       if (RDATA(obj)->dfree == (RUBY_DATA_FUNC)rb_blk_free) {
-        void *val, *prev;
+        void *val;
         VALUE ptr;
 
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_body);

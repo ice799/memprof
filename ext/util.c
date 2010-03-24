@@ -3,6 +3,7 @@
  * information and a checksum.
  */
 #include <stdlib.h>
+#include <util.h>
 /*   !!!! DO NOT MODIFY THIS FUNCTION !!!!
  *   TODO create specs for this!
  */
