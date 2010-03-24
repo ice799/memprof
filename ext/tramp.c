@@ -123,7 +123,7 @@ hook_freelist(int entry, void *tramp)
 void
 insert_tramp(const char *trampee, void *tramp)
 {
-  void *trampee_addr = bin_find_symbol(trampee, NULL);
+  void *trampee_addr = bin_find_symbol(trampee, NULL, 0);
   int inline_ent = inline_tramp_size;
 
   if (trampee_addr == NULL) {
@@ -136,7 +136,7 @@ insert_tramp(const char *trampee, void *tramp)
     }
   } else {
     tramp_table[tramp_size].addr = tramp;
-    if (bin_update_image(trampee, &tramp_table[tramp_size]) != 0)
+    if (bin_update_image(trampee, &tramp_table[tramp_size], NULL) != 0)
       errx(EX_SOFTWARE, "Failed to insert tramp for %s", trampee);
     tramp_size++;
   }

@@ -90,6 +90,7 @@ typedef enum {
  * entry.
  */
 typedef linkmap_cb_status (*linkmap_cb)(struct link_map *, void *);
+typedef void (*linkmap_lib_cb)(struct elf_info *lib, void *data);
 
 static void open_elf(struct elf_info *info);
 static int dissect_elf(struct elf_info *info, int find_debug);
@@ -140,27 +141,36 @@ get_got_addr(struct plt_entry *plt)
 /*
  * overwrite_got - given the address of a PLT entry, overwrite the address
  * in the GOT that the PLT entry uses with the address in tramp.
+ *
+ * returns the original function address
  */
-static void
+static void *
 overwrite_got(void *plt, const void *tramp)
 {
   assert(plt != NULL);
   assert(tramp != NULL);
+  void *ret = NULL;
+
+  memcpy(&ret, get_got_addr(plt), sizeof(ret));
   memcpy(get_got_addr(plt), &tramp, sizeof(void *));
-  return;
+  return ret;
 }
 
 struct plt_hook_data {
   const char *sym;
-  const void *tramp;
+  void *addr;
+};
+
+struct dso_iter_data {
+  linkmap_lib_cb cb;
+  void *passthru;
 };
 
 static linkmap_cb_status
-hook_func_cb(struct link_map *map, void *data)
+for_each_dso_cb(struct link_map *map, void *data)
 {
-  struct plt_hook_data *hook_data = data;
+  struct dso_iter_data *iter_data = data;
   struct elf_info curr_lib;
-  void *trampee_addr = NULL;
 
   /* skip a few things we don't care about */
   if (strstr(map->l_name, "linux-vdso")) {
@@ -203,10 +213,7 @@ hook_func_cb(struct link_map *map, void *data)
   dbg_printf("dissected the elf file: %s, base: %lx\n",
       curr_lib.filename, (unsigned long)curr_lib.base_addr);
 
-  if ((trampee_addr = find_plt_addr(hook_data->sym, &curr_lib)) != NULL) {
-    dbg_printf("found: %s @ %p\n", hook_data->sym, trampee_addr);
-    overwrite_got(trampee_addr, hook_data->tramp);
-  }
+  iter_data->cb(&curr_lib, iter_data->passthru);
 
   elf_end(curr_lib.elf);
   close(curr_lib.fd);
@@ -214,12 +221,26 @@ hook_func_cb(struct link_map *map, void *data)
 }
 
 static void
-hook_required_objects(void *tramp)
+for_each_dso(linkmap_lib_cb cb, void *passthru)
 {
-  struct plt_hook_data data;
-  data.sym = "rb_newobj";
-  data.tramp = tramp;
-  walk_linkmap(hook_func_cb, &data);
+  struct dso_iter_data data;
+  data.cb = cb;
+  data.passthru = passthru;
+  walk_linkmap(for_each_dso_cb, &data);
+}
+
+static void
+hook_required_objects(struct elf_info *info, void *data)
+{
+  assert(info != NULL);
+  struct plt_hook_data *hook_data = data;
+  void *trampee_addr = NULL;
+
+  if ((trampee_addr = find_plt_addr(hook_data->sym, info)) != NULL) {
+    dbg_printf("found: %s @ %p\n", hook_data->sym, trampee_addr);
+    overwrite_got(trampee_addr, hook_data->addr);
+  }
+
   return;
 }
 
@@ -320,6 +341,8 @@ find_plt_addr(const char *symname, struct elf_info *info)
     info = ruby_info;
   }
 
+  assert(info != NULL);
+
   /* Search through each of the .rela.plt entries */
   for (i = 0; i < info->relplt_count; i++) {
     GElf_Rela rela;
@@ -365,36 +388,76 @@ find_plt_addr(const char *symname, struct elf_info *info)
 static void *
 do_bin_find_symbol(const char *sym, size_t *size, struct elf_info *elf)
 {
-  char *name = NULL;
+  const char *name = NULL;
 
   assert(sym != NULL);
   assert(elf != NULL);
 
-  assert(elf->symtab_data != NULL);
-  assert(elf->symtab_data->d_buf != NULL);
+  ElfW(Sym) *esym, *lastsym = NULL;
+  if (elf->symtab_data && elf->symtab_data->d_buf) {
+    dbg_printf("checking symtab....\n");
+    esym = (ElfW(Sym)*) elf->symtab_data->d_buf;
+    lastsym = (ElfW(Sym)*) ((char*) elf->symtab_data->d_buf + elf->symtab_data->d_size);
 
-  ElfW(Sym) *esym = (ElfW(Sym)*) elf->symtab_data->d_buf;
-  ElfW(Sym) *lastsym = (ElfW(Sym)*) ((char*) elf->symtab_data->d_buf + elf->symtab_data->d_size);
+    assert(esym <= lastsym);
 
-  assert(esym <= lastsym);
+    for (; esym < lastsym; esym++){
+      /* ignore numeric/empty symbols */
+      if ((esym->st_value == 0) ||
+          (ELF32_ST_BIND(esym->st_info)== STB_NUM))
+        continue;
 
-  for (; esym < lastsym; esym++){
-    /* ignore weak/numeric/empty symbols */
-    if ((esym->st_value == 0) ||
-        (ELF32_ST_BIND(esym->st_info)== STB_WEAK) ||
-        (ELF32_ST_BIND(esym->st_info)== STB_NUM))
-      continue;
+      name = elf_strptr(elf->elf, elf->symtab_shdr.sh_link, (size_t)esym->st_name);
 
-    name = elf_strptr(elf->elf, elf->symtab_shdr.sh_link, (size_t)esym->st_name);
-
-    if (name && strcmp(name, sym) == 0) {
-      if (size) {
-        *size = esym->st_size;
+      if (name && strcmp(name, sym) == 0) {
+        if (size) {
+          *size = esym->st_size;
+        }
+        dbg_printf("Found symbol: %s in symtab\n", sym);
+        return elf->base_addr + (void *)esym->st_value;
       }
-      return elf->base_addr + (void *)esym->st_value;
     }
   }
+
+  if (elf->dynsym && elf->dynsym->d_buf) {
+    dbg_printf("checking dynsymtab....\n");
+    esym = (ElfW(Sym) *) elf->dynsym->d_buf;
+    lastsym = (ElfW(Sym) *) ((char *) elf->dynsym->d_buf + elf->dynsym->d_size);
+
+    for (; esym < lastsym; esym++){
+      /* ignore numeric/empty symbols */
+      if ((esym->st_value == 0) ||
+          (ELF32_ST_BIND(esym->st_info)== STB_NUM))
+        continue;
+
+      name = elf->dynstr + esym->st_name;
+
+      if (name && strcmp(name, sym) == 0) {
+        if (size) {
+          *size = esym->st_size;
+        }
+        dbg_printf("Found symbol: %s in dynsym\n", sym);
+        return elf->base_addr + (void *)esym->st_value;
+      }
+    }
+  }
+
+  dbg_printf("Couldn't find symbol: %s in dynsym\n", sym);
   return NULL;
+}
+
+static void
+find_symbol_cb(struct elf_info *info, void *data)
+{
+  assert(info != NULL);
+  void *trampee_addr = NULL;
+  struct plt_hook_data *hook_data = data;
+  void *ret = do_bin_find_symbol(hook_data->sym, NULL, info);
+  if (ret) {
+    hook_data->addr = ret;
+    dbg_printf("found %s @ %p, fn addr: %p\n", hook_data->sym, trampee_addr,
+        hook_data->addr);
+  }
 }
 
 /*
@@ -404,9 +467,20 @@ do_bin_find_symbol(const char *sym, size_t *size, struct elf_info *elf)
  * This function is just a wrapper for the internal symbol lookup function.
  */
 void *
-bin_find_symbol(const char *sym, size_t *size)
+bin_find_symbol(const char *sym, size_t *size, int search_libs)
 {
-  return do_bin_find_symbol(sym, size, ruby_info);
+  void *ret = do_bin_find_symbol(sym, size, ruby_info);
+
+  if (!ret && search_libs) {
+    dbg_printf("Didn't find symbol: %s in ruby, searching other libs\n", sym);
+    struct plt_hook_data hd;
+    hd.sym = sym;
+    hd.addr = NULL;
+    for_each_dso(find_symbol_cb, &hd);
+    ret = hd.addr;
+  }
+
+  return ret;
 }
 
 /*
@@ -467,6 +541,8 @@ bin_find_symbol_name(void *sym) {
  * Given -
  *  trampee - the name of the symbol to hook
  *  tramp - the stage 2 trampoline entry
+ *  orig_func - out parameter storing the address of the function that was
+ *  originally called.
  *
  * This function will update the ruby binary image so that all calls to trampee
  * will be routed to tramp.
@@ -474,7 +550,7 @@ bin_find_symbol_name(void *sym) {
  * Returns 0 on success
  */
 int
-bin_update_image(const char *trampee, struct tramp_st2_entry *tramp)
+bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig_func)
 {
   void *trampee_addr = NULL;
 
@@ -482,31 +558,55 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp)
   assert(tramp != NULL);
   assert(tramp->addr != NULL);
 
-  if (!libruby) {
+  /* first check if the symbol is in the PLT */
+  trampee_addr = find_plt_addr(trampee, NULL);
+
+  /* it isn't in the PLT, try to find it in the binary itself */
+  if (!trampee_addr) {
+    dbg_printf("Couldn't find %s in the PLT...\n", trampee);
     unsigned char *byte = ruby_info->text_segment;
-    trampee_addr = bin_find_symbol(trampee, NULL);
+    trampee_addr = bin_find_symbol(trampee, NULL, 0);
     size_t count = 0;
     int num = 0;
 
     assert(byte != NULL);
-    assert(trampee_addr != NULL);
+
+    if (!trampee_addr) {
+      dbg_printf("WARNING: Couldn't find: %s anywhere, so not tramping!\n", trampee);
+      return 0;
+    }
+
+    if (orig_func) {
+      *orig_func = trampee_addr;
+    }
 
     for(; count < ruby_info->text_segment_len; byte++, count++) {
       if (arch_insert_st1_tramp(byte, trampee_addr, tramp) == 0) {
         num++;
       }
     }
+    dbg_printf("Inserted %d tramps for: %s\n", num, trampee);
   } else {
-    trampee_addr = find_plt_addr(trampee, NULL);
-    assert(trampee_addr != NULL);
-    overwrite_got(trampee_addr, tramp->addr);
+    void *ret = NULL;
+    dbg_printf("Found %s in the PLT, inserting tramp...\n", trampee);
+    ret = overwrite_got(trampee_addr, tramp->addr);
+
+    assert(ret != NULL);
+
+    if (orig_func) {
+      *orig_func = ret;
+      dbg_printf("setting orig function: %p\n", *orig_func);
+    }
   }
 
-  if (strcmp("rb_newobj", trampee) == 0) {
-    dbg_printf("Trying to hook rb_newobj in other libraries...\n");
-    hook_required_objects(tramp->addr);
-    dbg_printf("Done searching other libraries for rb_newobj!\n");
-  }
+  dbg_printf("Trying to hook %s in other libraries...\n", trampee);
+
+  struct plt_hook_data data;
+  data.addr = tramp->addr;
+  data.sym = trampee;
+  for_each_dso(hook_required_objects, &data);
+
+  dbg_printf("Done searching other libraries for %s\n", trampee);
 
   return 0;
 }

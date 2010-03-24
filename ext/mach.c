@@ -348,7 +348,7 @@ get_symtab_string(uint32_t stroff) {
  */
 
 void *
-bin_find_symbol(const char *symbol, size_t *size) {
+bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
   void *ptr = NULL;
   uint32_t i, j;
 
@@ -438,12 +438,12 @@ bin_find_symbol_name(void *symbol) {
  */
 
 int
-bin_update_image(const char *trampee, struct tramp_st2_entry *tramp)
+bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig_function)
 {
   int ret = -1;
   int i;
   int header_count = _dyld_image_count();
-  void *trampee_addr = bin_find_symbol(trampee, NULL);
+  void *trampee_addr = bin_find_symbol(trampee, NULL, 0);
 
   // Go through all the mach objects that are loaded into this process
   for (i=0; i < header_count; i++) {

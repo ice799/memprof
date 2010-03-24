@@ -21,6 +21,8 @@ bin_init();
  * Given:
  *  - sym - a symbol name
  *  - size - optional out parameter
+ *  - search_libs - 0 to search only ruby/libruby, 1 to search other
+ *    libraries, too.
  *
  * This function will search for the symbol sym and return its address if
  * found, or NULL if the symbol could not be found.
@@ -29,7 +31,7 @@ bin_init();
  * size of the symbol.
  */
 void *
-bin_find_symbol(const char *sym, size_t *size);
+bin_find_symbol(const char *sym, size_t *size, int search_libs);
 
 /*
  * bin_find_symbol_name - find a symbol's name
@@ -85,6 +87,8 @@ bin_type_member_offset(const char *type, const char *member);
  * Given:
  *  - trampee - the name of the symbol to hook
  *  - tramp - the stage 2 trampoline entry
+ *  - orig_func - out parameter storing the address of the function that was
+ *    originally being called.
  *
  * this function will update the binary image so that all calls to trampee will
  * be routed to tramp.
@@ -92,5 +96,5 @@ bin_type_member_offset(const char *type, const char *member);
  * Returns 0 on success.
  */
 int
-bin_update_image(const char *trampee, struct tramp_st2_entry *tramp);
+bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig_func);
 #endif
