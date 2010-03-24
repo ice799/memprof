@@ -214,7 +214,7 @@ add_define "_ARCH_#{arch}_"
 
 if ENV['MEMPROF_DEBUG'] == '1'
   add_define "_MEMPROF_DEBUG"
-  $preload = ["\nCFLAGS = -Wall -Wextra"]
+  $preload = ["\nCFLAGS = -Wall -Wextra -fPIC -ggdb3 -O0"]
 end
 
 if is_elf or is_macho
