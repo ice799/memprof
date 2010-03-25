@@ -12,25 +12,25 @@ describe "MemprofUploader" do
   end
 
   it "should fail without a pid being passed" do
-    output = `ruby bin/memprof -l SomeLabel -k abcdef`
+    output = `ruby bin/memprof -n SomeLabel -k abcdef`
     output.should =~ /Missing PID!/
     $?.exitstatus.should == 1
   end
 
-  it "should fail without a label being passed" do
+  it "should fail without a name being passed" do
     output = `ruby bin/memprof -p 123 -k abcdef`
-    output.should =~ /Missing label!/
+    output.should =~ /Missing name!/
     $?.exitstatus.should == 1
   end
 
   it "should fail without an API key" do
-    output = `ruby bin/memprof -p 123 -l SomeLabel`
+    output = `ruby bin/memprof -p 123 -n SomeLabel`
     output.should =~ /Missing API key!/
     $?.exitstatus.should == 1
   end
 
   it "should fail with an invalid pid" do
-    output = `ruby bin/memprof -p 99999999 -l Label -k abcdef`
+    output = `ruby bin/memprof -p 99999999 -n Label -k abcdef`
     output.should =~ Regexp.new("No such process 99999999!")
     $?.exitstatus.should == 1
   end
@@ -38,7 +38,7 @@ describe "MemprofUploader" do
   it "should fail when the target process does not create a new file within 5 sec" do
     pid = fork { sleep 5; exit! }
     Process.detach(pid)
-    output = `ruby bin/memprof -p #{pid} -l Label -k abcdef`
+    output = `ruby bin/memprof -p #{pid} -n Label -k abcdef`
     output.should =~ Regexp.new("Waiting 5 seconds for process #{pid} to create a new dump...")
     output.should =~ Regexp.new("Timed out after waiting 5 seconds")
     $?.exitstatus.should == 1
@@ -57,7 +57,7 @@ describe "MemprofUploader" do
       exit!
       }
     Process.detach(pid)
-    output = `ruby bin/memprof -p #{pid} -l Label -k abcdef -t`
+    output = `ruby bin/memprof -p #{pid} -n Label -k abcdef -t`
     output.should =~ Regexp.new("Waiting 5 seconds for process #{pid} to create a new dump...")
     output.should =~ Regexp.new("Found file /tmp/memprof-#{pid}-\\d*.json\\.?\\w*")
     output.should =~ Regexp.new("Dump in progress. Waiting 60 seconds for it to complete...")
@@ -78,7 +78,7 @@ describe "MemprofUploader" do
     }
     Process.detach(pid)
     sleep 2
-    output = `ruby bin/memprof -p #{pid} -l TestDump -k abcdef -t`
+    output = `ruby bin/memprof -p #{pid} -n TestDump -k abcdef -t`
     output.should =~ Regexp.new("Waiting 5 seconds for process #{pid} to create a new dump...")
     output.should =~ Regexp.new("Found file /tmp/memprof-#{pid}-\\d*.json\\.?\\w*")
     output.should =~ Regexp.new("Finished!")
@@ -98,7 +98,7 @@ describe "MemprofUploader" do
     }
     Process.detach(pid)
     sleep 2
-    output = `ruby bin/memprof -p #{pid} -l TestDump -k abcdef -t --no-delete`
+    output = `ruby bin/memprof -p #{pid} -n TestDump -k abcdef -t --no-delete`
     output.should =~ Regexp.new("Waiting 5 seconds for process #{pid} to create a new dump...")
     output.should =~ Regexp.new("Found file /tmp/memprof-#{pid}-\\d*.json\\w*")
     output.should =~ Regexp.new("Finished!")
