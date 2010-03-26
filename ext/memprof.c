@@ -489,6 +489,22 @@ memprof_track_bytes(int argc, VALUE *argv, VALUE self)
 #include "rubyio.h"
 #include "re.h"
 
+#ifndef RARRAY_PTR
+#define RARRAY_PTR(ary) RARRAY(ary)->ptr
+#endif
+
+#ifndef RARRAY_LEN
+#define RARRAY_LEN(ary) RARRAY(ary)->len
+#endif
+
+#ifndef RSTRING_PTR
+#define RSTRING_PTR(str) RSTRING(str)->ptr
+#endif
+
+#ifndef RSTRING_LEN
+#define RSTRING_LEN(str) RSTRING(str)->len
+#endif
+
 /* HAX: copied from internal yajl_gen.c (PATCH yajl before building instead)
  */
 
@@ -694,7 +710,7 @@ obj_dump(VALUE obj, yajl_gen gen)
         yajl_gen_cstr(gen, "class_name");
         VALUE name = rb_classname(RBASIC(obj)->klass);
         if (RTEST(name))
-          yajl_gen_cstr(gen, RSTRING(name)->ptr);
+          yajl_gen_cstr(gen, RSTRING_PTR(name));
         else
           yajl_gen_cstr(gen, 0);
       }
@@ -1216,7 +1232,7 @@ obj_dump(VALUE obj, yajl_gen gen)
       yajl_gen_cstr(gen, "string");
 
       yajl_gen_cstr(gen, "length");
-      yajl_gen_integer(gen, RSTRING(obj)->len);
+      yajl_gen_integer(gen, RSTRING_LEN(obj));
 
       if (FL_TEST(obj, ELTS_SHARED|FL_USER3)) {
         yajl_gen_cstr(gen, "shared");
@@ -1231,7 +1247,7 @@ obj_dump(VALUE obj, yajl_gen gen)
         yajl_gen_array_close(gen);
       } else {
         yajl_gen_cstr(gen, "data");
-        yajl_gen_string(gen, (unsigned char *)RSTRING(obj)->ptr, RSTRING(obj)->len);
+        yajl_gen_string(gen, (unsigned char *)RSTRING_PTR(obj), RSTRING_LEN(obj));
       }
       break;
 
@@ -1262,7 +1278,7 @@ obj_dump(VALUE obj, yajl_gen gen)
       yajl_gen_cstr(gen, "name");
       VALUE name = rb_classname(obj);
       if (RTEST(name))
-        yajl_gen_cstr(gen, RSTRING(name)->ptr);
+        yajl_gen_cstr(gen, RSTRING_PTR(name));
       else
         yajl_gen_cstr(gen, 0);
 
@@ -1273,7 +1289,7 @@ obj_dump(VALUE obj, yajl_gen gen)
         yajl_gen_cstr(gen, "super_name");
         VALUE super_name = rb_classname(RCLASS(obj)->super);
         if (RTEST(super_name))
-          yajl_gen_cstr(gen, RSTRING(super_name)->ptr);
+          yajl_gen_cstr(gen, RSTRING_PTR(super_name));
         else
           yajl_gen_cstr(gen, 0);
       }
