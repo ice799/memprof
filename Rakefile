@@ -32,4 +32,3 @@ task :x86_64_static do
   rvm 1.8.7 --symlink memprof"'
   Rake::Task[:ci_spec].invoke
 end
-
