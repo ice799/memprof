@@ -17,18 +17,34 @@ task :ci_spec do
   sh "~/.rvm/bin/memprof_ruby spec/memprof_spec.rb"
 end
 
-task :x86_64_shared do
+task :mri_x86_64_shared do
   sh '/usr/bin/env bash -c "
   source ~/.rvm/scripts/rvm &&
-  rvm install 1.8.7 --force -C --enable-shared &&
+  rvm install 1.8.7 --reconfigure -C --enable-shared &&
   rvm 1.8.7 --symlink memprof"'
   Rake::Task[:ci_spec].invoke
 end
 
-task :x86_64_static do
+task :mri_x86_64_static do
   sh '/usr/bin/env bash -c "
   source ~/.rvm/scripts/rvm &&
-  rvm install 1.8.7 --force -C --disable-shared &&
+  rvm install 1.8.7 --reconfigure -C --disable-shared &&
   rvm 1.8.7 --symlink memprof"'
+  Rake::Task[:ci_spec].invoke
+end
+
+task :ree_x86_64_shared do
+  sh '/usr/bin/env bash -c "
+  source ~/.rvm/scripts/rvm &&
+  rvm install ree --reconfigure -C --enable-shared &&
+  rvm ree --symlink memprof"'
+  Rake::Task[:ci_spec].invoke
+end
+
+task :ree_x86_64_static do
+  sh '/usr/bin/env bash -c "
+  source ~/.rvm/scripts/rvm &&
+  rvm install ree --reconfigure -C --disable-shared &&
+  rvm ree --symlink memprof"'
   Rake::Task[:ci_spec].invoke
 end
