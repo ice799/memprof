@@ -48,3 +48,4 @@ task :ree_x86_64_static do
   rvm ree --symlink memprof"'
   Rake::Task[:ci_spec].invoke
 end
+
