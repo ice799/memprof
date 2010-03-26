@@ -10,9 +10,9 @@ task :default => :spec
 
 task :ci_spec do
   Dir.chdir('ext') do
-    sh "make clean" rescue nil
+    sh '/usr/bin/env bash -c "make clean"' rescue nil
     sh "~/.rvm/bin/memprof_ruby extconf.rb"
-    sh "make"
+    sh '/usr/bin/env bash -c "make"'
   end
   sh "~/.rvm/bin/memprof_ruby spec/memprof_spec.rb"
 end
