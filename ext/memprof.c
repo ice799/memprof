@@ -939,7 +939,7 @@ obj_dump(VALUE obj, yajl_gen gen)
     case T_FILE:
       yajl_gen_cstr(gen, "file");
 
-      rb_io_t *file = RFILE(obj)->fptr;
+      OpenFile *file = RFILE(obj)->fptr;
 
       if (file->f) {
         yajl_gen_cstr(gen, "fileno");

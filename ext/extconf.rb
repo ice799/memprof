@@ -198,7 +198,7 @@ if have_header('mach-o/dyld.h')
   end
 
   values = results.map{ |l| l[/value="(.+?)"/, 1] }
-  vars = Hash[ *expressions.map{|n,e| n }.zip(values).flatten(1) ].each do |name, val|
+  vars = Hash[ *expressions.map{|n,e| n }.zip(values).flatten ].each do |name, val|
     add_define "#{name}=#{val.split.first}"
   end
 end
