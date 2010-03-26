@@ -486,6 +486,7 @@ memprof_track_bytes(int argc, VALUE *argv, VALUE self)
 #include <yajl/yajl_gen.h>
 #include <stdarg.h>
 #include "env.h"
+#include "rubyio.h"
 #include "re.h"
 
 /* HAX: copied from internal yajl_gen.c (PATCH yajl before building instead)
@@ -938,11 +939,56 @@ obj_dump(VALUE obj, yajl_gen gen)
     case T_FILE:
       yajl_gen_cstr(gen, "file");
 
-      VALUE fileno = rb_funcall(obj, rb_intern("fileno"), 0);
-      if (RTEST(fileno)) {
+      rb_io_t *file = RFILE(obj)->fptr;
+
+      if (file->f) {
         yajl_gen_cstr(gen, "fileno");
-        yajl_gen_integer(gen, FIX2INT(fileno));
+        yajl_gen_integer(gen, fileno(file->f));
       }
+
+      if (file->f2) {
+        yajl_gen_cstr(gen, "fileno2");
+        yajl_gen_integer(gen, fileno(file->f2));
+      }
+
+      if (file->pid) {
+        yajl_gen_cstr(gen, "pid");
+        yajl_gen_integer(gen, file->pid);
+      }
+
+      if (file->path) {
+        yajl_gen_cstr(gen, "path");
+        yajl_gen_cstr(gen, file->path);
+      }
+
+      if (file->mode) {
+        yajl_gen_cstr(gen, "mode");
+        yajl_gen_array_open(gen);
+        if (file->mode & FMODE_READABLE)
+          yajl_gen_cstr(gen, "readable");
+        if (file->mode & FMODE_WRITABLE)
+          yajl_gen_cstr(gen, "writable");
+        if (file->mode & FMODE_READWRITE)
+          yajl_gen_cstr(gen, "readwrite");
+        if (file->mode & FMODE_APPEND)
+          yajl_gen_cstr(gen, "append");
+        if (file->mode & FMODE_CREATE)
+          yajl_gen_cstr(gen, "create");
+        if (file->mode & FMODE_BINMODE)
+          yajl_gen_cstr(gen, "binmode");
+        if (file->mode & FMODE_SYNC)
+          yajl_gen_cstr(gen, "sync");
+        if (file->mode & FMODE_WBUF)
+          yajl_gen_cstr(gen, "wbuf");
+        if (file->mode & FMODE_RBUF)
+          yajl_gen_cstr(gen, "rbuf");
+        if (file->mode & FMODE_WSPLIT)
+          yajl_gen_cstr(gen, "wsplit");
+        if (file->mode & FMODE_WSPLIT_INITIALIZED)
+          yajl_gen_cstr(gen, "wsplit_initialized");
+        yajl_gen_array_close(gen);
+      }
+
       break;
 
     case T_FLOAT:
