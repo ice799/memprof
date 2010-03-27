@@ -8,44 +8,32 @@ task :spec do
 end
 task :default => :spec
 
-task :ci_spec do
+# Should be used like:
+# rake --trace ci[1.8.7,shared]
+
+task :ci, [:ruby_type, :lib_option] do |t, args|
+  ruby_type, lib_option = args[:ruby_type], args[:lib_option]
+  raise "#{ruby_type} is not a supported ruby version" unless ["1.8.6", "1.8.7", "ree"].include?(ruby_type)
+  raise "#{lib_option} is not a supported " unless ["shared", "static"].include?(lib_option)
+
+  lib_option = case lib_option
+  when "static"
+    "--disable-shared"
+  when "shared"
+    "--enable-shared"
+  end
+
+  sh "/usr/bin/env bash -c \"
+  source ~/.rvm/scripts/rvm &&
+  rvm install #{ruby_type} --reconfigure -C #{lib_option} &&
+  rvm #{ruby_type} --symlink memprof &&
+  memprof_gem install bacon\""
+
   Dir.chdir('ext') do
     sh '/usr/bin/env bash -c "make clean"' rescue nil
     sh "~/.rvm/bin/memprof_ruby extconf.rb"
     sh '/usr/bin/env bash -c "make"'
   end
   sh "~/.rvm/bin/memprof_ruby spec/memprof_spec.rb"
-end
-
-task :mri_x86_64_shared do
-  sh '/usr/bin/env bash -c "
-  source ~/.rvm/scripts/rvm &&
-  rvm install 1.8.7 --reconfigure -C --enable-shared &&
-  rvm 1.8.7 --symlink memprof"'
-  Rake::Task[:ci_spec].invoke
-end
-
-task :mri_x86_64_static do
-  sh '/usr/bin/env bash -c "
-  source ~/.rvm/scripts/rvm &&
-  rvm install 1.8.7 --reconfigure -C --disable-shared &&
-  rvm 1.8.7 --symlink memprof"'
-  Rake::Task[:ci_spec].invoke
-end
-
-task :ree_x86_64_shared do
-  sh '/usr/bin/env bash -c "
-  source ~/.rvm/scripts/rvm &&
-  rvm install ree --reconfigure -C --enable-shared &&
-  rvm ree --symlink memprof"'
-  Rake::Task[:ci_spec].invoke
-end
-
-task :ree_x86_64_static do
-  sh '/usr/bin/env bash -c "
-  source ~/.rvm/scripts/rvm &&
-  rvm install ree --reconfigure -C --disable-shared &&
-  rvm ree --symlink memprof"'
-  Rake::Task[:ci_spec].invoke
 end
 
