@@ -49,7 +49,7 @@ describe "MemprofUploader" do
       # create a fake file
       filename = "/tmp/memprof-#{Process.pid}-#{Time.now.to_i}.json.IN_PROGRESS"
       # simulate dump in progress
-      trap("INFO") { File.open(filename, "w") {|f| f.write("foo") }; sleep 1 }
+      trap("URG") { File.open(filename, "w") {|f| f.write("foo") }; sleep 1 }
       # should get signaled somewhere in here and execute the handler before exiting.
       sleep 5
       # rename the file to simulate completion of the dump writeout.

@@ -5,7 +5,7 @@ rescue LoadError
 end
 
 Memprof.start
-old_handler = trap('INFO'){
+old_handler = trap('URG'){
   pid = Process.pid
   fork{
     GC.start

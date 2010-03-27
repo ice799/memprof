@@ -120,11 +120,11 @@ class MemprofUploader
 
   def signal_process(pid)
     begin
-      Process.kill("INFO", pid)
+      Process.kill("URG", pid)
     rescue Errno::ESRCH
       fail_with("No such process #{pid}!")
     end
-    puts "Signaled process #{pid} with SIGINFO"
+    puts "Signaled process #{pid} with SIGURG"
   end
 
 end
