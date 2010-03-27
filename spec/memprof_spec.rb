@@ -76,7 +76,7 @@ describe Memprof do
     Memprof.stop
     Memprof.dump_all(filename)
 
-    obj = File.open(filename, 'r').each_line.find do |line|
+    obj = File.open(filename, 'r').readlines.find do |line|
       line =~ /"dump out the entire heap"/
     end
 
@@ -90,7 +90,7 @@ describe Memprof do
     @str = "some random" + " string"
     Memprof.dump_all(filename)
 
-    obj = File.open(filename, 'r').each_line.find do |line|
+    obj = File.open(filename, 'r').readlines.find do |line|
       line =~ /"some random string"/
     end
 
