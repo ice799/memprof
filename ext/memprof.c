@@ -1507,16 +1507,19 @@ memprof_dump_lsof(yajl_gen gen)
 
       yajl_gen_map_open(gen);
 
+      yajl_gen_cstr(gen, "_id");
+      yajl_gen_format(gen, "lsof:%d", i);
+
       yajl_gen_cstr(gen, "type");
       yajl_gen_cstr(gen, "lsof");
 
       yajl_gen_cstr(gen, "fd");
       yajl_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[3]));
 
-      yajl_gen_cstr(gen, "type");
+      yajl_gen_cstr(gen, "fd_type");
       yajl_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[4]));
 
-      yajl_gen_cstr(gen, "name");
+      yajl_gen_cstr(gen, "fd_name");
       yajl_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[RARRAY_LEN(parts)-1]));
 
       yajl_gen_map_close(gen);
