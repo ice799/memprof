@@ -26,6 +26,7 @@ class MemprofUploader
       opts.on("-n", "--name <name>",        "Name for your dump               (required)")      {|arg| @name = arg }
       opts.on("-k", "--key <key>",          "Memprof.com API key              (required)")      {|arg| @key = arg }
       opts.on("-d", "--[no-]delete",        "Delete dump file after uploading (default true)")  {|arg| @delete_dump = arg }
+      opts.on("-s", "--seconds <seconds>",  "Seconds to wait for the dump     (default 60)")     {|arg| @secs = arg}
       opts.on("-t", "--[no-]test",          "Test run (don't actually upload) (default false)") {|arg| @test = arg }
       opts.on("-f", "--file <path>",        "Upload specific json dump        (optional)")      {|arg| @file = arg }
       opts.on("--put-my-data-on-the-internet",  "Confirm that you understand\n" +
@@ -45,6 +46,9 @@ class MemprofUploader
 
     # Make this default to true if the user didn't pass any preference.
     @delete_dump = true if @delete_dump.nil?
+
+    # Make this default to 60 if the user didn't pass the number of seconds.
+    @secs = 60 if @secs.nil?
 
     if @pid.nil? and @file.nil?
       fail_with("Missing PID! (-p PID)")
@@ -96,17 +100,17 @@ class MemprofUploader
 
     5.times do |i|
       sleep 1 unless file = (Dir.glob("/tmp/memprof-#{pid}-*") - old_files).first and break
-      fail_with("Timed out after waiting 5 seconds") if i+1 == 5
+      fail_with("Timed out after waiting 5 seconds. Make sure you added requre '/path/to/memprof/signal.rb' to your application.") if i+1 == 5
     end
 
     puts "\nFound file #{file}"
 
     if file =~ /\.IN_PROGRESS/
       file = file.sub(/\.IN_PROGRESS/, "")
-      puts "Dump in progress. Waiting 60 seconds for it to complete..."
-      60.times do |i|
+      puts "Dump in progress. Waiting #{@secs} seconds for it to complete..."
+      @secs.times do |i|
         sleep 1 unless File.exist?(file) and break
-        fail_with("Timed out after waiting 60 seconds") if i+1 == 60
+        fail_with("Timed out after waiting #{@secs} seconds") if i+1 == @secs
       end
     end
 
