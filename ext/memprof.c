@@ -1529,6 +1529,41 @@ memprof_dump_lsof(yajl_gen gen)
 }
 
 static void
+memprof_dump_ps(yajl_gen gen)
+{
+  VALUE cmd = rb_str_new2("ps -o rss,vsize -p ");
+  VALUE pid = rb_funcall(rb_mProcess, rb_intern("pid"), 0);
+  rb_str_append(cmd, rb_funcall(pid, rb_intern("to_s"), 0));
+
+  VALUE ps = rb_funcall(rb_cObject, '`', 1, cmd);
+  if (RTEST(ps)) {
+    VALUE newline = rb_str_new2("\n");
+    VALUE lines = rb_funcall(ps, rb_intern("split"), 1, newline);
+
+    if (RARRAY_LEN(lines) == 2) {
+      VALUE parts = rb_funcall(RARRAY_PTR(lines)[1], rb_intern("split"), 0);
+
+      yajl_gen_map_open(gen);
+
+      yajl_gen_cstr(gen, "_id");
+      yajl_gen_cstr(gen, "ps");
+
+      yajl_gen_cstr(gen, "type");
+      yajl_gen_cstr(gen, "ps");
+
+      yajl_gen_cstr(gen, "rss");
+      yajl_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[0]));
+
+      yajl_gen_cstr(gen, "vsize");
+      yajl_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[1]));
+
+      yajl_gen_map_close(gen);
+      yajl_gen_reset(gen);
+    }
+  }
+}
+
+static void
 json_print(void *ctx, const char * str, unsigned int len)
 {
   FILE *out = (FILE *)ctx;
@@ -1633,6 +1668,7 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   }
 
   memprof_dump_lsof(gen);
+  memprof_dump_ps(gen);
 
   yajl_gen_clear(gen);
   yajl_gen_free(gen);
