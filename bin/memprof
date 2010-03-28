@@ -100,7 +100,7 @@ class MemprofUploader
 
     5.times do |i|
       sleep 1 unless file = (Dir.glob("/tmp/memprof-#{pid}-*") - old_files).first and break
-      fail_with("Timed out after waiting 5 seconds. Make sure you added requre '/path/to/memprof/signal.rb' to your application.") if i+1 == 5
+      fail_with("Timed out after waiting 5 seconds. Make sure you added require '#{File.expand_path('../../lib/memprof/signal', __FILE__)}' to your application.") if i+1 == 5
     end
 
     puts "\nFound file #{file}"
