@@ -3,6 +3,7 @@
 require 'rubygems'
 require 'optparse'
 require 'restclient'
+require 'term/ansicolor'
 
 MEMPROF_URL = "http://127.0.0.1:7006/upload"
 
@@ -14,6 +15,8 @@ http://www.memprof.com
 EOF
 
 class MemprofUploader
+  include Term::ANSIColor
+
   def initialize(args=ARGV)
     puts MEMPROF_BANNER
 
@@ -24,6 +27,9 @@ class MemprofUploader
       opts.on("-k", "--key <key>",          "Memprof.com API key              (required)")      {|arg| @key = arg }
       opts.on("-d", "--[no-]delete",        "Delete dump file after uploading (default true)")  {|arg| @delete_dump = arg }
       opts.on("-t", "--[no-]test",          "Test run (don't actually upload) (default false)") {|arg| @test = arg }
+      opts.on("--put-my-data-on-the-internet",  "Confirm that you understand\n" +
+              "                                     memprof.com will show all your\n" +
+              "                                     internal data on the internet    (required)") {|arg| @confirmed = true}
     end
 
     begin
@@ -39,7 +45,11 @@ class MemprofUploader
     # Make this default to true if the user didn't pass any preference.
     @delete_dump = true if @delete_dump.nil?
 
-    if @pid.nil?
+    if !@confirmed
+      fail_with("\nERROR: You MUST CONFIRM that you understand ALL YOUR CODE "+
+                "WILL BE PUBLICLY AVAILABLE ON THE INTERNET by passing " +
+                "--put-my-data-on-the-internet\n\n", true)
+    elsif @pid.nil?
       fail_with("Missing PID!")
     elsif @name.nil? || @name.empty?
       fail_with("Missing name!")
@@ -111,9 +121,13 @@ class MemprofUploader
     p response.to_s
   end
 
-  def fail_with(str)
+  def fail_with(str, yell=false)
     puts @parser.to_s
-    puts "\n" + str
+    if yell
+      print red, bold, str, reset
+    else
+      puts "\n" + str
+    end
     puts "Exiting..."
     exit(1)
   end
