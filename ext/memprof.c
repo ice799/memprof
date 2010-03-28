@@ -679,12 +679,11 @@ obj_dump_class(yajl_gen gen, VALUE obj)
     yajl_gen_cstr(gen, "class");
     yajl_gen_value(gen, RBASIC(obj)->klass);
 
-    yajl_gen_cstr(gen, "class_name");
     VALUE name = rb_classname(RBASIC(obj)->klass);
-    if (RTEST(name))
+    if (RTEST(name)) {
+      yajl_gen_cstr(gen, "class_name");
       yajl_gen_cstr(gen, RSTRING_PTR(name));
-    else
-      yajl_gen_cstr(gen, 0);
+    }
   }
 }
 
