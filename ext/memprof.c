@@ -672,6 +672,22 @@ nd_type_str(VALUE obj)
   }
 }
 
+static inline void
+obj_dump_class(yajl_gen gen, VALUE obj)
+{
+  if (RBASIC(obj)->klass) {
+    yajl_gen_cstr(gen, "class");
+    yajl_gen_value(gen, RBASIC(obj)->klass);
+
+    yajl_gen_cstr(gen, "class_name");
+    VALUE name = rb_classname(RBASIC(obj)->klass);
+    if (RTEST(name))
+      yajl_gen_cstr(gen, RSTRING_PTR(name));
+    else
+      yajl_gen_cstr(gen, 0);
+  }
+}
+
 /* TODO
  *  look for FL_EXIVAR flag and print ivars
  *  print more detail about Proc/struct BLOCK in T_DATA if freefunc == blk_free
@@ -702,18 +718,7 @@ obj_dump(VALUE obj, yajl_gen gen)
   switch (type=BUILTIN_TYPE(obj)) {
     case T_DATA:
       yajl_gen_cstr(gen, "data");
-
-      if (RBASIC(obj)->klass) {
-        yajl_gen_cstr(gen, "class");
-        yajl_gen_value(gen, RBASIC(obj)->klass);
-
-        yajl_gen_cstr(gen, "class_name");
-        VALUE name = rb_classname(RBASIC(obj)->klass);
-        if (RTEST(name))
-          yajl_gen_cstr(gen, RSTRING_PTR(name));
-        else
-          yajl_gen_cstr(gen, 0);
-      }
+      obj_dump_class(gen, obj);
 
       if (DATA_PTR(obj)) {
         yajl_gen_cstr(gen, "data");
@@ -944,16 +949,12 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     case T_STRUCT:
       yajl_gen_cstr(gen, "struct");
-
-      yajl_gen_cstr(gen, "class");
-      yajl_gen_value(gen, RBASIC(obj)->klass);
-
-      yajl_gen_cstr(gen, "class_name");
-      yajl_gen_cstr(gen, rb_obj_classname(obj));
+      obj_dump_class(gen, obj);
       break;
 
     case T_FILE:
       yajl_gen_cstr(gen, "file");
+      obj_dump_class(gen, obj);
 
       OpenFile *file = RFILE(obj)->fptr;
 
@@ -1009,6 +1010,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     case T_FLOAT:
       yajl_gen_cstr(gen, "float");
+      obj_dump_class(gen, obj);
 
       yajl_gen_cstr(gen, "data");
       yajl_gen_double(gen, RFLOAT(obj)->value);
@@ -1016,6 +1018,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     case T_BIGNUM:
       yajl_gen_cstr(gen, "bignum");
+      obj_dump_class(gen, obj);
 
       yajl_gen_cstr(gen, "negative");
       yajl_gen_bool(gen, RBIGNUM(obj)->sign == 0);
@@ -1029,6 +1032,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     case T_MATCH:
       yajl_gen_cstr(gen, "match");
+      obj_dump_class(gen, obj);
 
       yajl_gen_cstr(gen, "data");
       yajl_gen_value(gen, RMATCH(obj)->str);
@@ -1036,6 +1040,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     case T_REGEXP:
       yajl_gen_cstr(gen, "regexp");
+      obj_dump_class(gen, obj);
 
       yajl_gen_cstr(gen, "length");
       yajl_gen_integer(gen, RREGEXP(obj)->len);
@@ -1046,6 +1051,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     case T_SCOPE:
       yajl_gen_cstr(gen, "scope");
+      obj_dump_class(gen, obj);
 
       struct SCOPE *scope = (struct SCOPE *)obj;
       if (scope->local_tbl) {
@@ -1230,6 +1236,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     case T_STRING:
       yajl_gen_cstr(gen, "string");
+      obj_dump_class(gen, obj);
 
       yajl_gen_cstr(gen, "length");
       yajl_gen_integer(gen, RSTRING_LEN(obj));
@@ -1253,6 +1260,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     case T_VARMAP:
       yajl_gen_cstr(gen, "varmap");
+      obj_dump_class(gen, obj);
 
       struct RVarmap *vars = (struct RVarmap *)obj;
 
@@ -1274,6 +1282,7 @@ obj_dump(VALUE obj, yajl_gen gen)
     case T_MODULE:
     case T_ICLASS:
       yajl_gen_cstr(gen, type==T_CLASS ? "class" : type==T_MODULE ? "module" : "iclass");
+      obj_dump_class(gen, obj);
 
       yajl_gen_cstr(gen, "name");
       VALUE name = rb_classname(obj);
@@ -1316,12 +1325,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     case T_OBJECT:
       yajl_gen_cstr(gen, "object");
-
-      yajl_gen_cstr(gen, "class");
-      yajl_gen_value(gen, RBASIC(obj)->klass);
-
-      yajl_gen_cstr(gen, "class_name");
-      yajl_gen_cstr(gen, rb_obj_classname(obj));
+      obj_dump_class(gen, obj);
 
       struct RClass *klass = RCLASS(obj);
 
@@ -1335,6 +1339,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     case T_ARRAY:
       yajl_gen_cstr(gen, "array");
+      obj_dump_class(gen, obj);
 
       struct RArray *ary = RARRAY(obj);
 
@@ -1356,6 +1361,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     case T_HASH:
       yajl_gen_cstr(gen, "hash");
+      obj_dump_class(gen, obj);
 
       struct RHash *hash = RHASH(obj);
 
@@ -1380,6 +1386,7 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     default:
       yajl_gen_cstr(gen, "unknown");
+      obj_dump_class(gen, obj);
   }
 
   yajl_gen_cstr(gen, "code");
