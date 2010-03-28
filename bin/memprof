@@ -5,7 +5,7 @@ require 'optparse'
 require 'restclient'
 require 'term/ansicolor'
 
-MEMPROF_URL = "http://127.0.0.1:7006/upload"
+MEMPROF_URL = "https://memprof.com/upload"
 
 MEMPROF_BANNER = <<-EOF
 Memprof Uploader
