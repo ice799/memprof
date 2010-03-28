@@ -27,9 +27,10 @@ class MemprofUploader
       opts.on("-k", "--key <key>",          "Memprof.com API key              (required)")      {|arg| @key = arg }
       opts.on("-d", "--[no-]delete",        "Delete dump file after uploading (default true)")  {|arg| @delete_dump = arg }
       opts.on("-t", "--[no-]test",          "Test run (don't actually upload) (default false)") {|arg| @test = arg }
+      opts.on("-f", "--file <path>",        "Upload specific json dump        (optional)")      {|arg| @file = arg }
       opts.on("--put-my-data-on-the-internet",  "Confirm that you understand\n" +
-              "                                     memprof.com will show all your\n" +
-              "                                     internal data on the internet    (required)") {|arg| @confirmed = true}
+                                                "memprof.com will show all your            \n".rjust(80) +
+                                                "internal data on the internet    (required)".rjust(80)) {|arg| @confirmed = true}
     end
 
     begin
@@ -45,21 +46,24 @@ class MemprofUploader
     # Make this default to true if the user didn't pass any preference.
     @delete_dump = true if @delete_dump.nil?
 
-    if !@confirmed
-      fail_with("\nERROR: You MUST CONFIRM that you understand ALL YOUR CODE "+
-                "WILL BE PUBLICLY AVAILABLE ON THE INTERNET by passing " +
-                "--put-my-data-on-the-internet\n\n", true)
-    elsif @pid.nil?
-      fail_with("Missing PID!")
+    if @pid.nil? and @file.nil?
+      fail_with("Missing PID! (-p PID)")
+    elsif @file
+      @delete_dump = false
+      fail_with("File not found: #{@file}") unless File.exists?(@file)
     elsif @name.nil? || @name.empty?
-      fail_with("Missing name!")
+      fail_with("Missing name! (-n 'my application')")
     elsif @key.nil? || @key.empty?
-      fail_with("Missing API key!")
+      fail_with("Missing API key! (-k KEY)")
+    elsif !@confirmed
+      fail_with("\nERROR: You MUST CONFIRM that you understand ALL YOUR CODE "+
+                "WILL BE PUBLICLY \nAVAILABLE ON THE INTERNET by passing " +
+                "--put-my-data-on-the-internet", true)
     end
   end
 
   def run!
-    dump_filename = compress_file(get_dump_filename(@pid))
+    dump_filename = @file || compress_file(get_dump_filename(@pid))
 
     begin
       upload_dump(dump_filename, @name, @key)
@@ -121,14 +125,16 @@ class MemprofUploader
     p response.to_s
   end
 
-  def fail_with(str, yell=false)
+  def fail_with(str, yell=true)
     puts @parser.to_s
+    puts
     if yell
       print red, bold, str, reset
+      puts
     else
       puts "\n" + str
     end
-    puts "Exiting..."
+    puts
     exit(1)
   end
 
