@@ -1050,7 +1050,6 @@ obj_dump(VALUE obj, yajl_gen gen)
 
     case T_SCOPE:
       yajl_gen_cstr(gen, "scope");
-      obj_dump_class(gen, obj);
 
       struct SCOPE *scope = (struct SCOPE *)obj;
       if (scope->local_tbl) {
