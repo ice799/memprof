@@ -51,7 +51,6 @@ class MemprofUploader
     @secs = 60 if @secs.nil?
 
     if @file
-      @delete_dump = false
       fail_with("File not found: #{@file}") unless File.exists?(@file)
     end
 
@@ -69,7 +68,7 @@ class MemprofUploader
   end
 
   def run!
-    dump_filename = @file || compress_file(get_dump_filename(@pid))
+    dump_filename = @file ? compress_file(@file, "/tmp/#{File.basename @file}.gz") : compress_file(get_dump_filename(@pid))
 
     begin
       upload_dump(dump_filename, @name, @key)
@@ -85,10 +84,11 @@ class MemprofUploader
 
   private
 
-  def compress_file(filename)
+  def compress_file(filename, output=nil)
     puts "Compressing with gzip..."
-    `gzip #{filename}`
-    "#{filename}.gz"
+    output ||= "#{filename}.gz"
+    `gzip -c '#{filename}' > '#{output}'`
+    output
   end
 
   def get_dump_filename(pid)
