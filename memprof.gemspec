@@ -9,6 +9,8 @@ spec = Gem::Specification.new do |s|
   s.authors = ["Joe Damato", "Aman Gupta", "Jake Douglas", "Rob Benson"]
   s.email = ["joe@memprof.com", "aman@memprof.com", "jake@memprof.com"]
   s.extensions = "ext/extconf.rb"
+  s.bindir = 'bin'
+  s.executables << 'memprof'
   s.files = `git ls-files`.split
   s.add_dependency('rest-client', '>= 1.4.2')
   s.add_dependency('term-ansicolor')
