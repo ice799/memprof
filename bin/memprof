@@ -50,11 +50,13 @@ class MemprofUploader
     # Make this default to 60 if the user didn't pass the number of seconds.
     @secs = 60 if @secs.nil?
 
-    if @pid.nil? and @file.nil?
-      fail_with("Missing PID! (-p PID)")
-    elsif @file
+    if @file
       @delete_dump = false
       fail_with("File not found: #{@file}") unless File.exists?(@file)
+    end
+
+    if @pid.nil? and @file.nil?
+      fail_with("Missing PID! (-p PID)")
     elsif @name.nil? || @name.empty?
       fail_with("Missing name! (-n 'my application')")
     elsif @key.nil? || @key.empty?
