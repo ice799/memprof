@@ -26,7 +26,8 @@ class MemprofUploader
       opts.on("-n", "--name <name>",        "Name for your dump               (required)")      {|arg| @name = arg }
       opts.on("-k", "--key <key>",          "Memprof.com API key              (required)")      {|arg| @key = arg }
       opts.on("-d", "--[no-]delete",        "Delete dump file after uploading (default true)")  {|arg| @delete_dump = arg }
-      opts.on("-s", "--seconds <seconds>",  "Seconds to wait for the dump     (default 60)")     {|arg| @secs = arg}
+      opts.on("-s", "--seconds <seconds>",
+                    Integer,                "Seconds to wait for the dump     (default 60)")    {|arg| @secs = arg }
       opts.on("-t", "--[no-]test",          "Test run (don't actually upload) (default false)") {|arg| @test = arg }
       opts.on("-f", "--file <path>",        "Upload specific json dump        (optional)")      {|arg| @file = arg }
       opts.on("--put-my-data-on-the-internet",  "Confirm that you understand\n" +
@@ -48,7 +49,7 @@ class MemprofUploader
     @delete_dump = true if @delete_dump.nil?
 
     # Make this default to 60 if the user didn't pass the number of seconds.
-    @secs = 60 if @secs.nil?
+    @secs ||= 60
 
     if @file
       fail_with("File not found: #{@file}") unless File.exists?(@file)
