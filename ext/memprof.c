@@ -1869,21 +1869,21 @@ init_memprof_config_extended() {
     }
     if (memprof_config.gc_sweep_size == 0)
       errors_printed += fprintf(stderr,
-        "Failed to determine the size of gc_sweep/garbage_collect_0/garbage_collect: %ld\n",
+        "Failed to determine the size of gc_sweep/garbage_collect_0/garbage_collect: %zd\n",
         memprof_config.gc_sweep_size);
     if (memprof_config.finalize_list == NULL)
       errors_printed += fprintf(stderr,
         "Failed to locate finalize_list\n");
     if (memprof_config.finalize_list_size == 0)
       errors_printed += fprintf(stderr,
-        "Failed to determine the size of finalize_list: %ld\n",
+        "Failed to determine the size of finalize_list: %zd\n",
         memprof_config.finalize_list_size);
     if (memprof_config.rb_gc_force_recycle == NULL)
       errors_printed += fprintf(stderr,
         "Failed to locate rb_gc_force_recycle\n");
     if (memprof_config.rb_gc_force_recycle_size == 0)
       errors_printed += fprintf(stderr,
-        "Failed to determine the size of rb_gc_force_recycle: %ld\n",
+        "Failed to determine the size of rb_gc_force_recycle: %zd\n",
         memprof_config.rb_gc_force_recycle_size);
     if (memprof_config.freelist == NULL)
       errors_printed += fprintf(stderr,
