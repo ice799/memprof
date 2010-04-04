@@ -2,8 +2,9 @@
 #define _x86_gen_
 
 #include <assert.h>
-#include <sys/mman.h>
 #include <stdint.h>
+#include <string.h>
+#include <sys/mman.h>
 #include "arch.h"
 
 /*
@@ -53,8 +54,24 @@ copy_instructions(void *dest, void *src, size_t count)
 
   mprotect(aligned_addr, (dest - aligned_addr) + count, PROT_READ|PROT_WRITE|PROT_EXEC);
   memcpy(dest, src, count);
- // mprotect(aligned_addr, (dest - aligned_addr) + count, PROT_READ|PROT_EXEC);
 
+  /*
+   *  XXX This has to be commented out because setting certian sections to
+   *      readonly (.got.plt, et al.) will cause the rtld to die.
+   *
+   *      There is no way to get the current permissions bits for a page.
+   *
+   *      The way to solve this is:
+   *
+   *        1.) copy_instructions can take a final_permissions mask and each
+   *            overwrite site can put in the 'Right Thing'
+   *
+   *        2.) Each overwrite site can look up the 'Right Thing' in the object
+   *            header and pass it in, ensuring the desired permissions are
+   *            set after.
+   *
+   *  mprotect(aligned_addr, (dest - aligned_addr) + count, PROT_READ|PROT_EXEC);
+   */
   return;
 }
 

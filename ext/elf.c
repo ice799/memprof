@@ -16,6 +16,7 @@
 #include <limits.h>
 #include <link.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <sysexits.h>
 #include <unistd.h>
@@ -134,6 +135,7 @@ get_got_addr(struct plt_entry *plt)
 {
   assert(plt != NULL);
   /* the jump is relative to the start of the next instruction. */
+  dbg_printf("PLT addr: %p, .got.plt slot: %p\n", plt, (void *)&(plt->pad) + plt->jmp_disp);
   return (void *)&(plt->pad) + plt->jmp_disp;
 }
 
@@ -150,8 +152,9 @@ overwrite_got(void *plt, const void *tramp)
   assert(tramp != NULL);
   void *ret = NULL;
 
-  memcpy(&ret, get_got_addr(plt), sizeof(ret));
-  memcpy(get_got_addr(plt), &tramp, sizeof(void *));
+  memcpy(&ret, get_got_addr(plt), sizeof(void *));
+  copy_instructions(get_got_addr(plt), &tramp, sizeof(void *));
+  dbg_printf("GOT value overwritten to: %p\n", tramp);
   return ret;
 }
 
@@ -188,7 +191,6 @@ for_each_dso_cb(struct link_map *map, void *data)
     dbg_printf("found an empty string (skipping)\n");
     return CB_CONTINUE;
   }
-
   memset(&curr_lib, 0, sizeof(curr_lib));
   dbg_printf("trying to open elf object: %s\n", map->l_name);
   curr_lib.filename = map->l_name;
