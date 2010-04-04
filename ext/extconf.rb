@@ -219,7 +219,14 @@ if ENV['MEMPROF_DEBUG'] == '1'
 end
 
 if is_elf or is_macho
+  $objs = Dir['{.,*}/*.c'].map{ |file| file.gsub(/\.c(pp)?$/, '.o') }
   create_makefile('memprof')
+
+  makefile = File.read('Makefile')
+  makefile.gsub!('-c $<', '-o $(patsubst %.c,%.o,$<) -c $<')
+  makefile.gsub!(/(CLEANOBJS\s*=)/, '\1 */*.o')
+
+  File.open('Makefile', 'w+'){ |f| f.puts(makefile) }
 else
   raise 'unsupported platform'
 end
