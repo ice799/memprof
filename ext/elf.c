@@ -15,7 +15,6 @@
 #include <libgen.h>
 #include <limits.h>
 #include <link.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sysexits.h>

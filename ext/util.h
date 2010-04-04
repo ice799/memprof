@@ -2,6 +2,7 @@
 #define __util_h__
 
 #if defined(_MEMPROF_DEBUG)
+#include <stdio.h>
 #define dbg_printf(...) fprintf(stderr, __VA_ARGS__)
 #else
 #define dbg_printf(...)

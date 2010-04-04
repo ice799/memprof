@@ -20,6 +20,7 @@
 
 #include "arch.h"
 #include "bin_api.h"
+#include "tracer.h"
 #include "tramp.h"
 #include "util.h"
 
@@ -334,152 +335,17 @@ memprof_track(int argc, VALUE *argv, VALUE self)
   return Qnil;
 }
 
-struct memprof_malloc_stats {
-  size_t malloc_bytes_requested;
-  size_t calloc_bytes_requested;
-  size_t realloc_bytes_requested;
-
-  size_t malloc_bytes_actual;
-  size_t calloc_bytes_actual;
-  size_t realloc_bytes_actual;
-  size_t free_bytes_actual;
-
-  size_t malloc_calls;
-  size_t calloc_calls;
-  size_t realloc_calls;
-  size_t free_calls;
-};
-
-static struct memprof_malloc_stats memprof_malloc_stats;
-static void *orig_malloc, *orig_realloc, *orig_calloc, *orig_free;
-static size_t (*malloc_usable_size)(void *ptr);
-
-static void *
-malloc_tramp(size_t size)
-{
-  void *ret = NULL;
-  memprof_malloc_stats.malloc_bytes_requested += size;
-  memprof_malloc_stats.malloc_calls++;
-  ret = malloc(size);
-  memprof_malloc_stats.malloc_bytes_actual += malloc_usable_size(ret);
-  return ret;
-}
-
-static void *
-calloc_tramp(size_t nmemb, size_t size)
-{
-  void *ret = NULL;
-  memprof_malloc_stats.calloc_bytes_requested += (nmemb * size);
-  memprof_malloc_stats.calloc_calls++;
-  ret = calloc(nmemb, size);
-  memprof_malloc_stats.calloc_bytes_actual += malloc_usable_size(ret);
-  return ret;
-}
-
-static void *
-realloc_tramp(void *ptr, size_t size)
-{
-  /* TODO need to check malloc_usable_size of before/after i guess? */
-  void *ret = NULL;
-  memprof_malloc_stats.realloc_bytes_requested += size;
-  memprof_malloc_stats.realloc_calls++;
-  ret = realloc(ptr, size);
-  memprof_malloc_stats.realloc_bytes_actual += malloc_usable_size(ptr);
-  return ret;
-}
-
-static void
-free_tramp(void *ptr)
-{
-  /* TODO use malloc_usable_size to track bytes freed? */
-  memprof_malloc_stats.free_bytes_actual += malloc_usable_size(ptr);
-  memprof_malloc_stats.free_calls++;
-  free(ptr);
-}
-
-static void
-memprof_start_track_bytes()
-{
-  struct tramp_st2_entry tmp;
-
-  if (!malloc_usable_size) {
-    if ((malloc_usable_size =
-          bin_find_symbol("MallocExtension_GetAllocatedSize", NULL, 1)) == NULL) {
-      malloc_usable_size = bin_find_symbol("malloc_usable_size", NULL, 1);
-      dbg_printf("tcmalloc was not found...\n");
-    }
-    assert(malloc_usable_size != NULL);
-    dbg_printf("malloc_usable_size: %p\n", malloc_usable_size);
-  }
-
-  tmp.addr = malloc_tramp;
-  bin_update_image("malloc", &tmp, &orig_malloc);
-  assert(orig_malloc != NULL);
-  dbg_printf("orig_malloc: %p\n", orig_malloc);
-
-  tmp.addr = realloc_tramp;
-  bin_update_image("realloc", &tmp, &orig_realloc);
-  dbg_printf("orig_realloc: %p\n", orig_realloc);
-
-  tmp.addr = calloc_tramp;
-  bin_update_image("calloc", &tmp, &orig_calloc);
-  dbg_printf("orig_calloc: %p\n", orig_calloc);
-
-  tmp.addr = free_tramp;
-  bin_update_image("free", &tmp, &orig_free);
-  assert(orig_free != NULL);
-  dbg_printf("orig_free: %p\n", orig_free);
-}
-
-static void
-memprof_stop_track_bytes()
-{
-  struct tramp_st2_entry tmp;
-
-  tmp.addr = orig_malloc;
-  bin_update_image("malloc", &tmp, NULL);
-
-  tmp.addr = orig_realloc;
-  bin_update_image("realloc", &tmp, NULL);
-
-  tmp.addr = orig_calloc;
-  bin_update_image("calloc", &tmp, NULL);
-
-  tmp.addr = orig_free;
-  bin_update_image("free", &tmp, NULL);
-}
-
-static void
-memprof_reset_track_bytes()
-{
-  memset(&memprof_malloc_stats, 0, sizeof(memprof_malloc_stats));
-}
-
 static VALUE
-memprof_track_bytes(int argc, VALUE *argv, VALUE self)
+memprof_track_fun(int argc, VALUE *argv, VALUE self)
 {
   if (!rb_block_given_p())
     rb_raise(rb_eArgError, "block required");
 
-  memprof_start_track_bytes();
+  trace_invoke_all(TRACE_START);
   rb_yield(Qnil);
-  fprintf(stderr, "================ Requested ====================\n");
-  fprintf(stderr, "Malloced: %zd, Realloced: %zd, Calloced: %zd\n",
-      memprof_malloc_stats.malloc_bytes_requested, memprof_malloc_stats.realloc_bytes_requested,
-      memprof_malloc_stats.calloc_bytes_requested);
-  fprintf(stderr, "================ Actual ====================\n");
-  fprintf(stderr, "Malloced: %zd, Realloced: %zd, Calloced: %zd, Freed: %zd\n",
-      memprof_malloc_stats.malloc_bytes_actual, memprof_malloc_stats.realloc_bytes_actual,
-      memprof_malloc_stats.calloc_bytes_actual, memprof_malloc_stats.free_bytes_actual);
-  fprintf(stderr, "================ Call count ====================\n");
-  fprintf(stderr, "Calls to malloc: %zd, realloc: %zd, calloc: %zd, free: %zd\n",
-      memprof_malloc_stats.malloc_calls,
-      memprof_malloc_stats.realloc_calls,
-      memprof_malloc_stats.calloc_calls,
-      memprof_malloc_stats.free_calls);
-
-  memprof_reset_track_bytes();
-  memprof_stop_track_bytes();
+  trace_invoke_all(TRACE_DUMP);
+  trace_invoke_all(TRACE_STOP);
+  trace_invoke_all(TRACE_RESET);
   return Qnil;
 }
 
@@ -1952,13 +1818,15 @@ Init_memprof()
   rb_define_singleton_method(memprof, "track", memprof_track, -1);
   rb_define_singleton_method(memprof, "dump", memprof_dump, -1);
   rb_define_singleton_method(memprof, "dump_all", memprof_dump_all, -1);
-  rb_define_singleton_method(memprof, "track_bytes", memprof_track_bytes, -1);
+  rb_define_singleton_method(memprof, "track_fun", memprof_track_fun, -1);
 
   objs = st_init_numtable();
   init_memprof_config_base();
   bin_init();
   init_memprof_config_extended();
   create_tramp_table();
+
+  install_malloc_tracer();
 
   gc_hook = Data_Wrap_Struct(rb_cObject, sourcefile_marker, NULL, NULL);
   rb_global_variable(&gc_hook);
