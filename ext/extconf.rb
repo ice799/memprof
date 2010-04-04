@@ -160,7 +160,8 @@ if have_header('mach-o/dyld.h')
     # 'rb_newobj',
     # 'freelist',
     # 'heaps',
-    # 'heaps_used'
+    # 'heaps_used',
+    # 'finalizer_table'
   ]
 
   expressions = []

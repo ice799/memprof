@@ -33,6 +33,7 @@ struct memprof_config {
 
   void *heaps;
   void *heaps_used;
+  void *finalizer_table;
 
   size_t sizeof_RVALUE;
   size_t sizeof_heaps_slot;

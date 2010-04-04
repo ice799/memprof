@@ -1410,6 +1410,14 @@ globals_each_dump(st_data_t key, st_data_t record, st_data_t arg)
   return ST_CONTINUE;
 }
 
+static int
+finalizers_each_dump(st_data_t key, st_data_t val, st_data_t arg)
+{
+  yajl_gen_value((yajl_gen)arg, (VALUE)key);
+  yajl_gen_value((yajl_gen)arg, (VALUE)val);
+  return ST_CONTINUE;
+}
+
 static void
 memprof_dump_globals(yajl_gen gen)
 {
@@ -1563,6 +1571,29 @@ memprof_dump_ps(yajl_gen gen)
 }
 
 static void
+memprof_dump_finalizers(yajl_gen gen)
+{
+  st_table *finalizer_table = *(st_table **)memprof_config.finalizer_table;
+  if (finalizer_table) {
+    yajl_gen_map_open(gen);
+
+    yajl_gen_cstr(gen, "_id");
+    yajl_gen_cstr(gen, "finalizers");
+
+    yajl_gen_cstr(gen, "type");
+    yajl_gen_cstr(gen, "finalizers");
+
+    yajl_gen_cstr(gen, "data");
+    yajl_gen_array_open(gen);
+    st_foreach(finalizer_table, finalizers_each_dump, (st_data_t)gen);
+    yajl_gen_array_close(gen);
+
+    yajl_gen_map_close(gen);
+    yajl_gen_reset(gen);
+  }
+}
+
+static void
 json_print(void *ctx, const char * str, unsigned int len)
 {
   FILE *out = (FILE *)ctx;
@@ -1648,6 +1679,7 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
 
   track_objs = 0;
 
+  memprof_dump_finalizers(gen);
   memprof_dump_globals(gen);
   memprof_dump_stack(gen);
 
@@ -1727,6 +1759,8 @@ init_memprof_config_extended() {
   /* Stuff for dumping the heap */
   memprof_config.heaps                      = bin_find_symbol("heaps", NULL, 0);
   memprof_config.heaps_used                 = bin_find_symbol("heaps_used", NULL, 0);
+  memprof_config.finalizer_table            = bin_find_symbol("finalizer_table", NULL, 0);
+
 #ifdef sizeof__RVALUE
   memprof_config.sizeof_RVALUE              = sizeof__RVALUE;
 #else
