@@ -1413,8 +1413,11 @@ globals_each_dump(st_data_t key, st_data_t record, st_data_t arg)
 static int
 finalizers_each_dump(st_data_t key, st_data_t val, st_data_t arg)
 {
-  yajl_gen_value((yajl_gen)arg, (VALUE)key);
-  yajl_gen_value((yajl_gen)arg, (VALUE)val);
+  yajl_gen gen = (yajl_gen)arg;
+  yajl_gen_array_open(gen);
+  yajl_gen_value(gen, (VALUE)key);
+  yajl_gen_value(gen, (VALUE)val);
+  yajl_gen_array_close(gen);
   return ST_CONTINUE;
 }
 
