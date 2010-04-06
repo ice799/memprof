@@ -97,7 +97,7 @@ class MemprofUploader
     # We'll compare against this later to see which is the new file.
     old_files = Dir.glob("/tmp/memprof-#{pid}-*")
     signal_process(pid)
-    timeout = 30
+    timeout = @secs
     puts "Waiting #{timeout} seconds for process #{pid} to create a new dump..."
 
     file = nil
