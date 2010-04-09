@@ -369,60 +369,49 @@ extract_symbol_data(struct mach_config *img_cfg, struct symbol_data *sym_data)
   assert(img_cfg->symbol_table != NULL);
   assert(img_cfg->symbol_count > 0);
 
-  /* If the user passes a name, we want to fill in the address etc */
-  if (sym_data->name) {
-    for (i=0; i < img_cfg->symbol_count; i++) {
-      const struct nlist_64 *nlist_entry = img_cfg->symbol_table[i];
-      const char *string = get_symtab_string(img_cfg, nlist_entry->n_un.n_strx);
+  for (i=0; i < img_cfg->symbol_count; i++) {
+    const struct nlist_64 *nlist_entry = img_cfg->symbol_table[i];
+    const char *string = get_symtab_string(img_cfg, nlist_entry->n_un.n_strx);
 
-      if (string && strcmp(sym_data->name, string+1) == 0) {
-        const uint64_t addr = nlist_entry->n_value;
-        /* Add the slide to get the *real* address in the process. */
-        sym_data->address = (void*)(addr + img_cfg->image_offset);
-        sym_data->index = i;
-        const struct nlist_64 *next_entry = NULL;
+    /* Add the slide to get the *real* address in the process. */
+    const uint64_t addr = nlist_entry->n_value;
+    void *ptr = (void*)(addr + img_cfg->image_offset);
 
-        /*
-         * There can be multiple entries in the symbol table with the same n_value (address).
-         * This means that the 'next' one isn't always good enough. We have to make sure it's
-         * really a different symbol.
-         */
-        j = 1;
-        while (next_entry == NULL) {
-          const struct nlist_64 *tmp_entry = img_cfg->symbol_table[i + j];
-          if (nlist_entry->n_value != tmp_entry->n_value)
-            next_entry = tmp_entry;
-          j++;
-        }
-
-        /*
-         * Subtract our address from the address of the next symbol to get it's rough size.
-         * My observation is that the start of the next symbol will be padded to 16 byte alignment from the end of this one.
-         * This should be fine, since the point of getting the size is just to minimize scan area for tramp insertions.
-         */
-        sym_data->size = (next_entry->n_value - addr);
-        break;
-      }
-    }
-    return;
-  }
-
-  /* If the user passes an address, our job is to return the name */
-  if (sym_data->address) {
-    for (i=0; i < img_cfg->symbol_count; i++) {
-      const struct nlist_64 *nlist_entry = img_cfg->symbol_table[i];
-      const char *string = get_symtab_string(img_cfg, nlist_entry->n_un.n_strx);
-
-      const uint64_t addr = nlist_entry->n_value;
-      /* Add the slide to get the *real* address in the process. */
-      void *ptr = (void*)(addr + img_cfg->image_offset);
-
-      if (ptr == sym_data->address) {
+    /*
+     * If the user passes a name, match against the name
+     * If the user passes an address, match against that.
+     */
+    if ((sym_data->name && string && strcmp(sym_data->name, string+1) == 0) || (sym_data->address && ptr == sym_data->address)) {
+      if (!sym_data->address)
+        sym_data->address = ptr;
+      if (!sym_data->name)
         sym_data->name = string+1;
-        break;
+
+      sym_data->index = i;
+
+      const struct nlist_64 *next_entry = NULL;
+
+      /*
+       * There can be multiple entries in the symbol table with the same n_value (address).
+       * This means that the 'next' one isn't always good enough. We have to make sure it's
+       * really a different symbol.
+       */
+      j = 1;
+      while (next_entry == NULL) {
+        const struct nlist_64 *tmp_entry = img_cfg->symbol_table[i + j];
+        if (nlist_entry->n_value != tmp_entry->n_value)
+          next_entry = tmp_entry;
+        j++;
       }
+
+      /*
+       * Subtract our address from the address of the next symbol to get it's rough size.
+       * My observation is that the start of the next symbol will be padded to 16 byte alignment from the end of this one.
+       * This should be fine, since the point of getting the size is just to minimize scan area for tramp insertions.
+       */
+      sym_data->size = (next_entry->n_value - addr);
+      break;
     }
-    return;
   }
 }
 
