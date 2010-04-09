@@ -248,48 +248,31 @@ find_dyld_image_index(const struct mach_header_64 *hdr) {
 }
 
 /*
- * This function returns a buffer containing the file that is presumed
- * to be either the Ruby executable or libruby. (Wherever rb_newobj is found.)
- *
- * The passed pointer index is set to the dyld image index for the associated
- * in-process mach image.
- *
- * The reason that we read in the file is because the symbol table is not loaded
- * into memory with everything else at load time (at least not anywhere I can find).
+ * Reads a file from the filesystem and returns a pointer to it's buffer
  *
  * !!! The pointer returned by this function must be freed !!!
  */
 
 static void *
-get_ruby_file_and_header_index(int *index) {
-  void *ptr = NULL;
+read_file(const char *filename) {
   void *buf = NULL;
-  Dl_info info;
+  FILE *file = NULL;
   struct stat filestat;
 
-  // We can use this is a reasonably sure method of finding the file
-  // that the Ruby junk resides in.
-  ptr = dlsym(RTLD_DEFAULT, "rb_newobj");
+  assert(filename);
 
-  if (!ptr)
-    errx(EX_SOFTWARE, "Could not find rb_newobj in this process. WTF???");
-
-  if (!dladdr(ptr, &info) || !info.dli_fname)
-    errx(EX_SOFTWARE, "Could not find the Mach object associated with rb_newobj.");
-
-  FILE *file = fopen(info.dli_fname, "r");
+  file = fopen(filename, "r");
   if (!file)
-    errx(EX_OSFILE, "Failed to open Ruby file %s", info.dli_fname);
+    errx(EX_OSFILE, "Failed to open file %s", filename);
 
-  stat(info.dli_fname, &filestat);
+  stat(filename, &filestat);
   buf = malloc(filestat.st_size);
 
   if (fread(buf, filestat.st_size, 1, file) != 1)
-    errx(EX_OSFILE, "Failed to fread() Ruby file %s", info.dli_fname);
+    errx(EX_OSFILE, "Failed to fread() file %s", filename);
 
   fclose(file);
 
-  *index = find_dyld_image_index((const struct mach_header_64*) info.dli_fbase);
   return buf;
 }
 
@@ -378,7 +361,7 @@ get_symtab_string(struct mach_config *img_cfg, uint32_t stroff) {
  * to fill in the name.
  */
 
-void
+static void
 extract_symbol_data(struct mach_config *img_cfg, struct symbol_data *sym_data)
 {
   uint32_t i, j;
@@ -544,17 +527,29 @@ bin_type_member_offset(const char *type, const char *member)
 void
 bin_init()
 {
-  void *file = NULL;
+  void *ptr = NULL;
   int index = 0;
+  Dl_info info;
 
   memset(&ruby_img_cfg, 0, sizeof(struct mach_config));
 
-  file = get_ruby_file_and_header_index(&index);
+  // We can use this is a reasonably sure method of finding the file
+  // that the Ruby junk resides in.
+  ptr = dlsym(RTLD_DEFAULT, "rb_newobj");
 
-  const struct mach_header_64 *hdr = (const struct mach_header_64*) file;
+  if (!ptr)
+    errx(EX_SOFTWARE, "Could not find rb_newobj in this process. WTF???");
+
+  if (!dladdr(ptr, &info) || !info.dli_fname)
+    errx(EX_SOFTWARE, "Could not find the Mach object associated with rb_newobj.");
+
+  struct mach_header_64 *hdr = (struct mach_header_64*) read_file(info.dli_fname);
+  assert(hdr);
+
   if (hdr->magic != MH_MAGIC_64)
     errx(EX_SOFTWARE, "Magic for Ruby Mach-O file doesn't match");
 
+  index = find_dyld_image_index((const struct mach_header_64*) info.dli_fbase);
   ruby_img_cfg.image_offset = _dyld_get_image_vmaddr_slide(index);
 
   extract_symbol_table(hdr, &ruby_img_cfg);
@@ -563,6 +558,6 @@ bin_init()
   assert(ruby_img_cfg.string_table != NULL);
   assert(ruby_img_cfg.symbol_count > 0);
 
-  free(file);
+  free(hdr);
 }
 #endif
