@@ -37,7 +37,7 @@ struct symbol_data {
   uint32_t index;
 };
 
-static struct mach_config mach_config;
+static struct mach_config ruby_img_cfg;
 extern struct memprof_config memprof_config;
 
 /*
@@ -448,7 +448,7 @@ bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
   memset(&sym_data, 0, sizeof(struct symbol_data));
   sym_data.name = symbol;
 
-  extract_symbol_data(&mach_config, &sym_data);
+  extract_symbol_data(&ruby_img_cfg, &sym_data);
 
   if (size)
     *size = sym_data.size;
@@ -466,7 +466,7 @@ bin_find_symbol_name(void *symbol) {
   memset(&sym_data, 0, sizeof(struct symbol_data));
   sym_data.address = symbol;
 
-  extract_symbol_data(&mach_config, &sym_data);
+  extract_symbol_data(&ruby_img_cfg, &sym_data);
 
   return sym_data.name;
 }
@@ -544,7 +544,7 @@ bin_init()
   void *file = NULL;
   int index = 0;
 
-  memset(&mach_config, 0, sizeof(struct mach_config));
+  memset(&ruby_img_cfg, 0, sizeof(struct mach_config));
 
   file = get_ruby_file_and_header_index(&index);
 
@@ -552,13 +552,13 @@ bin_init()
   if (hdr->magic != MH_MAGIC_64)
     errx(EX_SOFTWARE, "Magic for Ruby Mach-O file doesn't match");
 
-  mach_config.image_offset = _dyld_get_image_vmaddr_slide(index);
+  ruby_img_cfg.image_offset = _dyld_get_image_vmaddr_slide(index);
 
-  extract_symbol_table(hdr, &mach_config.symbol_table, &mach_config.string_table, &mach_config.symbol_count, &mach_config.string_table_size);
+  extract_symbol_table(hdr, &ruby_img_cfg.symbol_table, &ruby_img_cfg.string_table, &ruby_img_cfg.symbol_count, &ruby_img_cfg.string_table_size);
 
-  assert(mach_config.symbol_table != NULL);
-  assert(mach_config.string_table != NULL);
-  assert(mach_config.symbol_count > 0);
+  assert(ruby_img_cfg.symbol_table != NULL);
+  assert(ruby_img_cfg.string_table != NULL);
+  assert(ruby_img_cfg.symbol_count > 0);
 
   free(file);
 }
