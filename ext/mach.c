@@ -322,10 +322,13 @@ nlist_cmp(const void *obj1, const void *obj2) {
  */
 
 static void
-extract_symbol_table(const struct mach_header_64 *hdr, const struct nlist_64 ***symbol_table, const char **string_table, uint32_t *symbol_count, uint32_t *strsize) {
+extract_symbol_table(const struct mach_header_64 *hdr, struct mach_config *img_cfg) {
   const struct nlist_64 **new_symtbl;
   char *new_strtbl;
   uint32_t i, j;
+
+  assert(hdr);
+  assert(img_cfg);
 
   const char *lc = (const char*) hdr + sizeof(struct mach_header_64);
 
@@ -344,10 +347,10 @@ extract_symbol_table(const struct mach_header_64 *hdr, const struct nlist_64 ***
 
       qsort(new_symtbl, sc->nsyms, sizeof(struct nlist_64*), &nlist_cmp);
 
-      *symbol_table = new_symtbl;
-      *string_table = new_strtbl;
-      *symbol_count = sc->nsyms;
-      *strsize = sc->strsize;
+      img_cfg->symbol_table = new_symtbl;
+      img_cfg->string_table = new_strtbl;
+      img_cfg->symbol_count = sc->nsyms;
+      img_cfg->string_table_size = sc->strsize;
       return;
     }
 
@@ -554,7 +557,7 @@ bin_init()
 
   ruby_img_cfg.image_offset = _dyld_get_image_vmaddr_slide(index);
 
-  extract_symbol_table(hdr, &ruby_img_cfg.symbol_table, &ruby_img_cfg.string_table, &ruby_img_cfg.symbol_count, &ruby_img_cfg.string_table_size);
+  extract_symbol_table(hdr, &ruby_img_cfg);
 
   assert(ruby_img_cfg.symbol_table != NULL);
   assert(ruby_img_cfg.string_table != NULL);
