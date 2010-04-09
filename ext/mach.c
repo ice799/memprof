@@ -20,6 +20,7 @@
 #include <mach-o/loader.h>
 #include <mach-o/ldsyms.h>
 #include <mach-o/nlist.h>
+#include <mach-o/dyld_images.h>
 
 struct mach_config {
   const struct nlist_64 **symbol_table;
@@ -91,31 +92,50 @@ update_dyld_stub_table(void *table, uint64_t len, void *trampee_addr, struct tra
 }
 
 /*
- * This function tells us if the passed stub table address
- * is something that we should try to update (by looking at it's filename)
- * Only try to update dyld stub entries in files that match "libruby.dylib" or "*.bundle" (other C gems)
+ * This function tells us if the passed header index is something
+ * that we should try to update (by looking at it's filename)
+ * Only try to update the running executable, or files that match
+ * "libruby.dylib" or "*.bundle" (other C gems)
  */
 
-static inline int
-should_update_stub_table(void *addr) {
-  Dl_info info;
+static const struct mach_header
+*should_update_image(int index) {
+  const struct mach_header *hdr = _dyld_get_image_header(index);
 
-  if (dladdr(addr, &info)) {
-    size_t len = strlen(info.dli_fname);
+  /* Don't update if it's the memprof bundle */
+  if ((void*)hdr == &_mh_bundle_header)
+    return NULL;
 
-    if (len >= 6) {
-      const char *possible_bundle = (info.dli_fname + len - 6);
-      if (strcmp(possible_bundle, "bundle") == 0)
-        return 1;
-    }
+  /* If it's the ruby executable, do it! */
+  if ((void*)hdr == &_mh_execute_header)
+    return hdr;
 
-    if (len >= 13) {
-      const char *possible_libruby = (info.dli_fname + len - 13);
-      if (strcmp(possible_libruby, "libruby.dylib") == 0)
-        return 1;
-    }
+  /* otherwise, check to see if its a bundle or libruby */
+  const struct dyld_all_image_infos* (*_dyld_get_all_image_infos)() = NULL;
+  const struct dyld_all_image_infos *images = NULL;
+
+  _dyld_lookup_and_bind("__dyld_get_all_image_infos", (void**)&_dyld_get_all_image_infos,NULL);
+  assert(_dyld_get_all_image_infos != NULL);
+
+  images = _dyld_get_all_image_infos();
+  assert(images!= NULL);
+
+  const struct dyld_image_info image = images->infoArray[index];
+
+  size_t len = strlen(image.imageFilePath);
+
+  if (len >= 6) {
+    const char *possible_bundle = (image.imageFilePath + len - 6);
+    if (strcmp(possible_bundle, "bundle") == 0)
+      return hdr;
   }
-  return 0;
+
+  if (len >= 13) {
+    const char *possible_libruby = (image.imageFilePath + len - 13);
+    if (strcmp(possible_libruby, "libruby.dylib") == 0)
+      return hdr;
+  }
+  return NULL;
 }
 
 /*
@@ -139,15 +159,12 @@ update_mach_section(const struct mach_header *header, const struct section_64 *s
   void *section = getsectdatafromheader_64((const struct mach_header_64*)header, "__TEXT", sect->sectname, &len) + slide;
 
   if (strncmp(sect->sectname, "__symbol_stub", 13) == 0) {
-    if (should_update_stub_table(section)) {
-      if (update_dyld_stub_table(section, sect->size, trampee_addr, tramp) == 0) {
-        ret = 0;
-      }
+    if (update_dyld_stub_table(section, sect->size, trampee_addr, tramp) == 0) {
+      ret = 0;
     }
     return ret;
   }
 
-  /* TODO: check the filename just like we do above for stub sections. No reason to look at unrelated files. */
   if (strcmp(sect->sectname, "__text") == 0) {
     size_t count = 0;
     for(; count < len; section++, count++) {
@@ -447,8 +464,9 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig
 
   // Go through all the mach objects that are loaded into this process
   for (i=0; i < header_count; i++) {
-    const struct mach_header *current_hdr = _dyld_get_image_header(i);
-    if ((void*)current_hdr == &_mh_bundle_header)
+    const struct mach_header *current_hdr = NULL;
+
+    if ((current_hdr = should_update_image(i)) == NULL)
       continue;
 
     if (update_bin_for_mach_header(current_hdr, _dyld_get_image_vmaddr_slide(i), trampee_addr, tramp) == 0)
