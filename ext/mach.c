@@ -30,6 +30,13 @@ struct mach_config {
   intptr_t image_offset;
 };
 
+struct symbol_data {
+  const char *name;
+  void *address;
+  uint32_t size;
+  uint32_t index;
+};
+
 static struct mach_config mach_config;
 extern struct memprof_config memprof_config;
 
@@ -354,34 +361,39 @@ extract_symbol_table(const struct mach_header_64 *hdr, const struct nlist_64 ***
  */
 
 static inline const char*
-get_symtab_string(uint32_t stroff) {
-  assert(mach_config.string_table != NULL);
-  assert(stroff < mach_config.string_table_size);
-  return mach_config.string_table + stroff;
+get_symtab_string(struct mach_config *img_cfg, uint32_t stroff) {
+  assert(img_cfg);
+  assert(img_cfg->string_table != NULL);
+  assert(stroff < img_cfg->string_table_size);
+  return img_cfg->string_table + stroff;
 }
 
 /*
- * Return the address and size of a symbol given it's name
+ * Lookup the address, size, and symbol table index of a symbol given a symbol_data
+ * If sym_data is passed with the name set, this function will attempt to fill
+ * in the address, etc. If it is passed with the address set, it will attempt
+ * to fill in the name.
  */
 
-void *
-bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
-  void *ptr = NULL;
+void
+extract_symbol_data(struct mach_config *img_cfg, struct symbol_data *sym_data)
+{
   uint32_t i, j;
 
-  assert(mach_config.symbol_table != NULL);
-  assert(mach_config.symbol_count > 0);
+  assert(img_cfg->symbol_table != NULL);
+  assert(img_cfg->symbol_count > 0);
 
-  for (i=0; i < mach_config.symbol_count; i++) {
-    const struct nlist_64 *nlist_entry = mach_config.symbol_table[i];
-    const char *string = get_symtab_string(nlist_entry->n_un.n_strx);
+  /* If the user passes a name, we want to fill in the address etc */
+  if (sym_data->name) {
+    for (i=0; i < img_cfg->symbol_count; i++) {
+      const struct nlist_64 *nlist_entry = img_cfg->symbol_table[i];
+      const char *string = get_symtab_string(img_cfg, nlist_entry->n_un.n_strx);
 
-    if (string && strcmp(symbol, string+1) == 0) {
-      const uint64_t addr = nlist_entry->n_value;
-      /* Add the slide to get the *real* address in the process. */
-      ptr = (void*)(addr + mach_config.image_offset);
-
-      if (size) {
+      if (string && strcmp(sym_data->name, string+1) == 0) {
+        const uint64_t addr = nlist_entry->n_value;
+        /* Add the slide to get the *real* address in the process. */
+        sym_data->address = (void*)(addr + img_cfg->image_offset);
+        sym_data->index = i;
         const struct nlist_64 *next_entry = NULL;
 
         /*
@@ -391,7 +403,7 @@ bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
          */
         j = 1;
         while (next_entry == NULL) {
-          const struct nlist_64 *tmp_entry = mach_config.symbol_table[i + j];
+          const struct nlist_64 *tmp_entry = img_cfg->symbol_table[i + j];
           if (nlist_entry->n_value != tmp_entry->n_value)
             next_entry = tmp_entry;
           j++;
@@ -402,12 +414,46 @@ bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
          * My observation is that the start of the next symbol will be padded to 16 byte alignment from the end of this one.
          * This should be fine, since the point of getting the size is just to minimize scan area for tramp insertions.
          */
-        *size = (next_entry->n_value - addr);
+        sym_data->size = (next_entry->n_value - addr);
+        break;
       }
-      break;
     }
+    return;
   }
-  return ptr;
+
+  /* If the user passes an address, our job is to return the name */
+  if (sym_data->address) {
+    for (i=0; i < img_cfg->symbol_count; i++) {
+      const struct nlist_64 *nlist_entry = img_cfg->symbol_table[i];
+      const char *string = get_symtab_string(img_cfg, nlist_entry->n_un.n_strx);
+
+      const uint64_t addr = nlist_entry->n_value;
+      /* Add the slide to get the *real* address in the process. */
+      void *ptr = (void*)(addr + img_cfg->image_offset);
+
+      if (ptr == sym_data->address) {
+        sym_data->name = string+1;
+        break;
+      }
+    }
+    return;
+  }
+}
+
+void *
+bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
+  void *ptr = NULL;
+  struct symbol_data sym_data;
+
+  memset(&sym_data, 0, sizeof(struct symbol_data));
+  sym_data.name = symbol;
+
+  extract_symbol_data(&mach_config, &sym_data);
+
+  if (size)
+    *size = sym_data.size;
+
+  return sym_data.address;
 }
 
 /*
@@ -415,27 +461,14 @@ bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
  */
 const char *
 bin_find_symbol_name(void *symbol) {
-  const char *name = NULL;
-  uint32_t i;
+  struct symbol_data sym_data;
 
-  assert(mach_config.symbol_table != NULL);
-  assert(mach_config.symbol_count > 0);
+  memset(&sym_data, 0, sizeof(struct symbol_data));
+  sym_data.address = symbol;
 
-  for (i=0; i < mach_config.symbol_count; i++) {
-    const struct nlist_64 *nlist_entry = mach_config.symbol_table[i];
-    const char *string = get_symtab_string(nlist_entry->n_un.n_strx);
+  extract_symbol_data(&mach_config, &sym_data);
 
-    const uint64_t addr = nlist_entry->n_value;
-    /* Add the slide to get the *real* address in the process. */
-    void *ptr = (void*)(addr + mach_config.image_offset);
-
-    if (ptr == symbol) {
-      name = string+1;
-      break;
-    }
-  }
-
-  return name;
+  return sym_data.name;
 }
 
 /*
