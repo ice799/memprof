@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <dlfcn.h>
 #include <err.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,11 +24,17 @@
 #include <mach-o/dyld_images.h>
 
 struct mach_config {
-  const struct nlist_64 **symbol_table;
+  const struct mach_header *hdr;
+  const struct nlist_64 *symbol_table;
+  const struct nlist_64 **sorted_symbol_table;
+  const struct section_64 *symstub_sect;
   const char *string_table;
   uint32_t symbol_count;
   uint32_t string_table_size;
   intptr_t image_offset;
+  uint32_t nindirectsyms;
+  uint32_t indirectsymoff;
+  void *file;
 };
 
 struct symbol_data {
@@ -73,6 +80,50 @@ get_dyld_stub_target(struct dyld_stub_entry *entry) {
 static inline void
 set_dyld_stub_target(struct dyld_stub_entry *entry, void *addr) {
   *((void**)((void*)(entry + 1) + entry->offset)) = addr;
+}
+
+static inline const char*
+get_symtab_string(struct mach_config *img_cfg, uint32_t stroff);
+
+static void
+extract_symbol_data(struct mach_config *img_cfg, struct symbol_data *sym_data);
+
+static void *
+find_stub_addr(const char *symname, struct mach_config *img_cfg)
+{
+  uint64_t i = 0, nsyms = 0;
+  uint32_t symindex = 0;
+  assert(img_cfg && symname);
+  const struct section_64 *sect = img_cfg->symstub_sect;
+
+  nsyms = sect->size / sect->reserved2;
+
+  for (; i < nsyms; i ++) {
+    uint32_t currsym = sect->reserved1 + i;
+    uint64_t stubaddr = sect->addr + (i * sect->reserved2);
+    uint32_t symoff = 0;
+
+    assert(currsym <= img_cfg->nindirectsyms);
+
+    /* indirect sym entries are just 32bit indexes into the symbol table to the
+     * symbol the stub is referring to.
+     */
+    symoff = img_cfg->indirectsymoff + (i * 4);
+    memcpy(&symindex, img_cfg->file + symoff, 4);
+    symindex = symindex & ((uint32_t) ~(INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS));
+
+    const struct nlist_64 *ent = img_cfg->symbol_table + symindex;
+    const char *string = get_symtab_string(img_cfg, ent->n_un.n_strx);
+
+    if (strcmp(symname, string+1) == 0) {
+      if (stubaddr) {
+        dbg_printf("address of stub for %s is %" PRId64 "\n", string, stubaddr);
+        return (void *)stubaddr;
+      }
+    }
+  }
+  dbg_printf("couldn't find address of stub: %s\n", symname);
+  return NULL;
 }
 
 /*
@@ -313,10 +364,11 @@ extract_symbol_table(const struct mach_header_64 *hdr, struct mach_config *img_c
   assert(hdr);
   assert(img_cfg);
 
-  const char *lc = (const char*) hdr + sizeof(struct mach_header_64);
+  const struct load_command *lc = (const struct load_command *)(hdr + 1);
 
-  for (i = 0; i < hdr->ncmds; i++) {
-    if (((const struct load_command*)lc)->cmd == LC_SYMTAB) {
+  for (i = 0; i < hdr->ncmds; i++, (lc = (const struct load_command *)((char *)lc + lc->cmdsize))) {
+    if (lc->cmd == LC_SYMTAB) {
+      dbg_printf("found an LC_SYMTAB load command.\n");
       const struct symtab_command *sc = (const struct symtab_command*) lc;
       const struct nlist_64 *file_symtbl = (const struct nlist_64*)((const char*)hdr + sc->symoff);
 
@@ -330,16 +382,45 @@ extract_symbol_table(const struct mach_header_64 *hdr, struct mach_config *img_c
 
       qsort(new_symtbl, sc->nsyms, sizeof(struct nlist_64*), &nlist_cmp);
 
-      img_cfg->symbol_table = new_symtbl;
+      img_cfg->symbol_table = file_symtbl;
+      img_cfg->sorted_symbol_table = new_symtbl;
       img_cfg->string_table = new_strtbl;
       img_cfg->symbol_count = sc->nsyms;
       img_cfg->string_table_size = sc->strsize;
-      return;
-    }
+    } else if (lc->cmd == LC_DYSYMTAB) {
+      dbg_printf("found an LC_DYSYMTAB load command.\n");
+      const struct dysymtab_command *dynsym = (const struct dysymtab_command *) lc;
+      img_cfg->nindirectsyms = dynsym->nindirectsyms;
+      img_cfg->indirectsymoff = dynsym->indirectsymoff;
+    } else if (lc->cmd == LC_SEGMENT_64) {
+      dbg_printf("found an LC_SEGMENT_64 load command.\n");
+      const struct segment_command_64 *seg = (const struct segment_command_64 *) lc;
+      uint32_t i = 0;
+      const struct section_64 *asect = (const struct section_64 *)(seg + 1);
+      for(; i < seg->nsects; i++, asect++) {
+        /*
+         * setting up data to find the indirect symbol tables.
+         */
 
-    lc += ((const struct load_command*)lc)->cmdsize;
+        /* if this section hsa no symbol stubs, then we don't care about it */
+        if ((asect->flags & SECTION_TYPE) != S_SYMBOL_STUBS)
+          continue;
+
+        if (asect->reserved2 == 0) {
+          dbg_printf("!!! Found an LC_SEGMET_64 which was marked as having stubs,"
+              " but does not have reserved2 set!! %16s.%16s (skipping)\n", asect->segname, asect->sectname);
+          continue;
+        }
+
+        dbg_printf("Found a section with symbol stubs: %16s.%16s.\n", asect->segname, asect->sectname);
+        img_cfg->symstub_sect = asect;
+      }
+    } else {
+      dbg_printf("found another load command that is not being tracked: %" PRId32 "\n", lc->cmd);
+    }
   }
-  errx(EX_SOFTWARE, "Unable to find LC_SYMTAB");
+
+  assert(img_cfg->symbol_table && img_cfg->string_table);
 }
 
 /*
@@ -370,8 +451,10 @@ extract_symbol_data(struct mach_config *img_cfg, struct symbol_data *sym_data)
   assert(img_cfg->symbol_count > 0);
 
   for (i=0; i < img_cfg->symbol_count; i++) {
-    const struct nlist_64 *nlist_entry = img_cfg->symbol_table[i];
-    const char *string = get_symtab_string(img_cfg, nlist_entry->n_un.n_strx);
+    const struct nlist_64 *nlist_entry = img_cfg->sorted_symbol_table[i];
+    const char *string = NULL;
+
+    string = get_symtab_string(img_cfg, nlist_entry->n_un.n_strx);
 
     /* Add the slide to get the *real* address in the process. */
     const uint64_t addr = nlist_entry->n_value;
@@ -398,7 +481,7 @@ extract_symbol_data(struct mach_config *img_cfg, struct symbol_data *sym_data)
        */
       j = 1;
       while (next_entry == NULL) {
-        const struct nlist_64 *tmp_entry = img_cfg->symbol_table[i + j];
+        const struct nlist_64 *tmp_entry = img_cfg->sorted_symbol_table[i + j];
         if (nlist_entry->n_value != tmp_entry->n_value)
           next_entry = tmp_entry;
         j++;
@@ -417,7 +500,6 @@ extract_symbol_data(struct mach_config *img_cfg, struct symbol_data *sym_data)
 
 void *
 bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
-  void *ptr = NULL;
   struct symbol_data sym_data;
 
   memset(&sym_data, 0, sizeof(struct symbol_data));
@@ -532,7 +614,8 @@ bin_init()
   if (!dladdr(ptr, &info) || !info.dli_fname)
     errx(EX_SOFTWARE, "Could not find the Mach object associated with rb_newobj.");
 
-  struct mach_header_64 *hdr = (struct mach_header_64*) read_file(info.dli_fname);
+  ruby_img_cfg.file =  read_file(info.dli_fname);
+  struct mach_header_64 *hdr = (struct mach_header_64*) ruby_img_cfg.file;
   assert(hdr);
 
   if (hdr->magic != MH_MAGIC_64)
