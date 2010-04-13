@@ -708,8 +708,11 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig
       if ((current_hdr = should_update_image(i)) == NULL)
         continue;
 
-      if (update_bin_for_mach_header(current_hdr, _dyld_get_image_vmaddr_slide(i), trampee_addr, tramp) == 0)
+      if (update_bin_for_mach_header(current_hdr, _dyld_get_image_vmaddr_slide(i), trampee_addr, tramp) == 0) {
         ret = 0;
+        if (orig_function)
+          *orig_function = trampee_addr;
+      }
     }
   }
   return ret;

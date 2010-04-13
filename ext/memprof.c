@@ -1827,6 +1827,7 @@ Init_memprof()
   create_tramp_table();
 
   install_malloc_tracer();
+  install_gc_tracer();
 
   gc_hook = Data_Wrap_Struct(rb_cObject, sourcefile_marker, NULL, NULL);
   rb_global_variable(&gc_hook);
