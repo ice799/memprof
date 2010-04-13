@@ -1818,7 +1818,7 @@ Init_memprof()
   rb_define_singleton_method(memprof, "track", memprof_track, -1);
   rb_define_singleton_method(memprof, "dump", memprof_dump, -1);
   rb_define_singleton_method(memprof, "dump_all", memprof_dump_all, -1);
-  rb_define_singleton_method(memprof, "track_fun", memprof_track_fun, -1);
+  rb_define_singleton_method(memprof, "trace", memprof_track_fun, -1);
 
   objs = st_init_numtable();
   init_memprof_config_base();
