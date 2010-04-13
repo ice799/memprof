@@ -6,6 +6,7 @@
 #include "arch.h"
 #include "bin_api.h"
 #include "tracer.h"
+#include "tramp.h"
 #include "util.h"
 #include "ruby.h"
 

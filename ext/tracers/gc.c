@@ -2,10 +2,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
 #include "arch.h"
 #include "bin_api.h"
 #include "tracer.h"
+#include "tramp.h"
 #include "util.h"
 
 struct memprof_gc_stats {
