@@ -35,8 +35,15 @@ static st_table *objs = NULL;
 /*
  * stuff needed for heap dumping
  */
+static double
+rb_timeofday()
+{
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return (double)tv.tv_sec + (double)tv.tv_usec * 1e-6;
+}
+
 static VALUE (*rb_classname)(VALUE);
-static double (*rb_timeofday)();
 static RUBY_DATA_FUNC *rb_bm_mark;
 static RUBY_DATA_FUNC *rb_blk_free;
 static RUBY_DATA_FUNC *rb_thread_mark;
@@ -1619,7 +1626,6 @@ init_memprof_config_extended() {
   }
 
   memprof_config.classname                  = bin_find_symbol("classname", NULL, 0);
-  memprof_config.timeofday                  = bin_find_symbol("timeofday", NULL, 0);
   memprof_config.bm_mark                    = bin_find_symbol("bm_mark", NULL, 0);
   memprof_config.blk_free                   = bin_find_symbol("blk_free", NULL, 0);
   memprof_config.thread_mark                = bin_find_symbol("thread_mark", NULL, 0);
@@ -1835,7 +1841,6 @@ Init_memprof()
 
   rb_classname = memprof_config.classname;
   rb_add_freelist = memprof_config.add_freelist;
-  rb_timeofday = memprof_config.timeofday;
   rb_bm_mark = memprof_config.bm_mark;
   rb_blk_free = memprof_config.blk_free;
   rb_thread_mark = memprof_config.thread_mark;

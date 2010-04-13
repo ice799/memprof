@@ -27,7 +27,6 @@ struct memprof_config {
   void *freelist;
   void *classname;
   void *add_freelist;
-  void *timeofday;
 
   void *rb_mark_table_add_filename;
 
