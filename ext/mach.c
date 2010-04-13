@@ -693,6 +693,11 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig
       continue; // always ignore memprof.bundle
 
     struct mach_config *cfg = mach_config_for_index(i);
+    if (cfg->filename && strstr(cfg->filename, "libSystem") != NULL) {
+      free_mach_config(cfg);
+      continue; // ignore libSystem
+    }
+
     void *stub = find_stub_addr(trampee, cfg);
 
     if (stub) {
