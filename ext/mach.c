@@ -508,7 +508,5 @@ bin_init()
   assert(mach_config.symbol_table != NULL);
   assert(mach_config.string_table != NULL);
   assert(mach_config.symbol_count > 0);
-
-  free(file);
 }
 #endif
