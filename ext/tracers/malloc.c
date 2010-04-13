@@ -101,7 +101,13 @@ malloc_trace_reset()
 static void
 malloc_trace_dump()
 {
-  fprintf(stderr, "\n================ Requested ================================\n");
+  fprintf(stderr, "================ Malloc ===================================\n");
+  fprintf(stderr, " Calls to malloc: %zd, realloc: %zd, calloc: %zd, free: %zd\n",
+      memprof_malloc_stats.malloc_calls,
+      memprof_malloc_stats.realloc_calls,
+      memprof_malloc_stats.calloc_calls,
+      memprof_malloc_stats.free_calls);
+  fprintf(stderr, "================ Requested ================================\n");
   fprintf(stderr, " Malloced: %zd, Realloced: %zd, Calloced: %zd\n",
       memprof_malloc_stats.malloc_bytes_requested, memprof_malloc_stats.realloc_bytes_requested,
       memprof_malloc_stats.calloc_bytes_requested);
@@ -109,12 +115,6 @@ malloc_trace_dump()
   fprintf(stderr, " Malloced: %zd, Realloced: %zd, Calloced: %zd, Freed: %zd\n",
       memprof_malloc_stats.malloc_bytes_actual, memprof_malloc_stats.realloc_bytes_actual,
       memprof_malloc_stats.calloc_bytes_actual, memprof_malloc_stats.free_bytes_actual);
-  fprintf(stderr, "================ Call count ===============================\n");
-  fprintf(stderr, " Calls to malloc: %zd, realloc: %zd, calloc: %zd, free: %zd\n",
-      memprof_malloc_stats.malloc_calls,
-      memprof_malloc_stats.realloc_calls,
-      memprof_malloc_stats.calloc_calls,
-      memprof_malloc_stats.free_calls);
   fprintf(stderr, "===========================================================\n\n");
 }
 
