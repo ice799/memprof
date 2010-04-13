@@ -101,20 +101,21 @@ malloc_trace_reset()
 static void
 malloc_trace_dump()
 {
-  fprintf(stderr, "================ Requested ====================\n");
-  fprintf(stderr, "Malloced: %zd, Realloced: %zd, Calloced: %zd\n",
+  fprintf(stderr, "\n================ Requested ================================\n");
+  fprintf(stderr, " Malloced: %zd, Realloced: %zd, Calloced: %zd\n",
       memprof_malloc_stats.malloc_bytes_requested, memprof_malloc_stats.realloc_bytes_requested,
       memprof_malloc_stats.calloc_bytes_requested);
-  fprintf(stderr, "================ Actual ====================\n");
-  fprintf(stderr, "Malloced: %zd, Realloced: %zd, Calloced: %zd, Freed: %zd\n",
+  fprintf(stderr, "================ Actual ===================================\n");
+  fprintf(stderr, " Malloced: %zd, Realloced: %zd, Calloced: %zd, Freed: %zd\n",
       memprof_malloc_stats.malloc_bytes_actual, memprof_malloc_stats.realloc_bytes_actual,
       memprof_malloc_stats.calloc_bytes_actual, memprof_malloc_stats.free_bytes_actual);
-  fprintf(stderr, "================ Call count ====================\n");
-  fprintf(stderr, "Calls to malloc: %zd, realloc: %zd, calloc: %zd, free: %zd\n",
+  fprintf(stderr, "================ Call count ===============================\n");
+  fprintf(stderr, " Calls to malloc: %zd, realloc: %zd, calloc: %zd, free: %zd\n",
       memprof_malloc_stats.malloc_calls,
       memprof_malloc_stats.realloc_calls,
       memprof_malloc_stats.calloc_calls,
       memprof_malloc_stats.free_calls);
+  fprintf(stderr, "===========================================================\n\n");
 }
 
 static void
@@ -123,10 +124,14 @@ malloc_trace_start()
   struct tramp_st2_entry tmp;
 
   if (!malloc_usable_size) {
-    if ((malloc_usable_size =
-          bin_find_symbol("MallocExtension_GetAllocatedSize", NULL, 1)) == NULL) {
-      malloc_usable_size = bin_find_symbol("malloc_usable_size", NULL, 1);
+    malloc_usable_size = bin_find_symbol("MallocExtension_GetAllocatedSize", NULL, 1);
+    if (!malloc_usable_size) {
       dbg_printf("tcmalloc was not found...\n");
+      malloc_usable_size = bin_find_symbol("malloc_usable_size", NULL, 1);
+    }
+    if (!malloc_usable_size) {
+      dbg_printf("malloc_usable_size was not found...\n");
+      malloc_usable_size = bin_find_symbol("malloc_size", NULL, 1);
     }
     assert(malloc_usable_size != NULL);
     dbg_printf("malloc_usable_size: %p\n", malloc_usable_size);

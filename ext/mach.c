@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <dlfcn.h>
 #include <err.h>
+#include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
@@ -22,6 +23,7 @@
 #include <mach-o/ldsyms.h>
 #include <mach-o/nlist.h>
 #include <mach-o/dyld_images.h>
+#include <mach-o/fat.h>
 
 struct mach_config {
   const struct mach_header *hdr;
@@ -32,9 +34,12 @@ struct mach_config {
   uint32_t symbol_count;
   uint32_t string_table_size;
   intptr_t image_offset;
+  intptr_t load_addr;
   uint32_t nindirectsyms;
   uint32_t indirectsymoff;
   void *file;
+  char *filename;
+  int index;
 };
 
 struct symbol_data {
@@ -61,7 +66,7 @@ extern struct memprof_config memprof_config;
 
 struct dyld_stub_entry {
   unsigned char jmp[2];
-  uint32_t offset;
+  int32_t offset;
 } __attribute((__packed__));
 
 /* Return the jmp target of a stub entry */
@@ -88,6 +93,9 @@ get_symtab_string(struct mach_config *img_cfg, uint32_t stroff);
 static void
 extract_symbol_data(struct mach_config *img_cfg, struct symbol_data *sym_data);
 
+static int
+find_dyld_image_index(const struct mach_header_64 *hdr);
+
 static void *
 find_stub_addr(const char *symname, struct mach_config *img_cfg)
 {
@@ -95,6 +103,9 @@ find_stub_addr(const char *symname, struct mach_config *img_cfg)
   uint32_t symindex = 0;
   assert(img_cfg && symname);
   const struct section_64 *sect = img_cfg->symstub_sect;
+
+  if (!sect)
+    return NULL;
 
   nsyms = sect->size / sect->reserved2;
 
@@ -109,7 +120,7 @@ find_stub_addr(const char *symname, struct mach_config *img_cfg)
      * symbol the stub is referring to.
      */
     symoff = img_cfg->indirectsymoff + (i * 4);
-    memcpy(&symindex, img_cfg->file + symoff, 4);
+    memcpy(&symindex, (char*)img_cfg->hdr + symoff, 4);
     symindex = symindex & ((uint32_t) ~(INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS));
 
     const struct nlist_64 *ent = img_cfg->symbol_table + symindex;
@@ -117,6 +128,8 @@ find_stub_addr(const char *symname, struct mach_config *img_cfg)
 
     if (strcmp(symname, string+1) == 0) {
       if (stubaddr) {
+        if (img_cfg->index != 0) // don't add load_addr for main exe
+          stubaddr = (char*)img_cfg->load_addr + stubaddr;
         dbg_printf("address of stub for %s is %" PRId64 "\n", string, stubaddr);
         return (void *)stubaddr;
       }
@@ -150,14 +163,54 @@ update_dyld_stub_table(void *table, uint64_t len, void *trampee_addr, struct tra
 }
 
 /*
+ * Get all DSOs
+ */
+static const struct dyld_all_image_infos *
+dyld_get_all_images() {
+  static const struct dyld_all_image_infos* (*_dyld_get_all_image_infos)() = NULL;
+  static const struct dyld_all_image_infos *images = NULL;
+
+  if (!_dyld_get_all_image_infos) {
+    _dyld_lookup_and_bind("__dyld_get_all_image_infos", (void**)&_dyld_get_all_image_infos, NULL);
+    assert(_dyld_get_all_image_infos != NULL);
+  }
+
+  if (!images) {
+    images = _dyld_get_all_image_infos();
+    assert(images != NULL);
+  }
+
+  return images;
+}
+
+/*
+ * Get info for particular DSO
+ */
+static const struct dyld_image_info *
+dyld_get_image_info_for_index(int index) {
+  const struct dyld_all_image_infos *images = dyld_get_all_images();
+
+  // Stupid indexes into the infoArray don't match indexes used elsewhere, so we have to loop
+  int i;
+  const struct mach_header_64 *hdr = _dyld_get_image_header(index);
+  for(i=0; i < _dyld_image_count(); i++) {
+    const struct dyld_image_info image = images->infoArray[i];
+    if (hdr == image.imageLoadAddress)
+      return &(images->infoArray[i]);
+  }
+
+  return NULL;
+}
+
+/*
  * This function tells us if the passed header index is something
  * that we should try to update (by looking at it's filename)
  * Only try to update the running executable, or files that match
  * "libruby.dylib" or "*.bundle" (other C gems)
  */
 
-static const struct mach_header
-*should_update_image(int index) {
+static const struct mach_header *
+should_update_image(int index) {
   const struct mach_header *hdr = _dyld_get_image_header(index);
 
   /* Don't update if it's the memprof bundle */
@@ -169,27 +222,18 @@ static const struct mach_header
     return hdr;
 
   /* otherwise, check to see if its a bundle or libruby */
-  const struct dyld_all_image_infos* (*_dyld_get_all_image_infos)() = NULL;
-  const struct dyld_all_image_infos *images = NULL;
+  const struct dyld_image_info *image = dyld_get_image_info_for_index(index);
 
-  _dyld_lookup_and_bind("__dyld_get_all_image_infos", (void**)&_dyld_get_all_image_infos,NULL);
-  assert(_dyld_get_all_image_infos != NULL);
-
-  images = _dyld_get_all_image_infos();
-  assert(images!= NULL);
-
-  const struct dyld_image_info image = images->infoArray[index];
-
-  size_t len = strlen(image.imageFilePath);
+  size_t len = strlen(image->imageFilePath);
 
   if (len >= 6) {
-    const char *possible_bundle = (image.imageFilePath + len - 6);
+    const char *possible_bundle = (image->imageFilePath + len - 6);
     if (strcmp(possible_bundle, "bundle") == 0)
       return hdr;
   }
 
   if (len >= 13) {
-    const char *possible_libruby = (image.imageFilePath + len - 13);
+    const char *possible_libruby = (image->imageFilePath + len - 13);
     if (strcmp(possible_libruby, "libruby.dylib") == 0)
       return hdr;
   }
@@ -316,8 +360,12 @@ read_file(const char *filename) {
   if (!file)
     errx(EX_OSFILE, "Failed to open file %s", filename);
 
-  stat(filename, &filestat);
+  if (stat(filename, &filestat) != 0)
+    errx(EX_OSFILE, "Failed to stat(%s): %s", filename, strerror(errno));
+
   buf = malloc(filestat.st_size);
+  if (!buf)
+    errx(EX_OSFILE, "Failed to malloc(): %s", strerror(errno));
 
   if (fread(buf, filestat.st_size, 1, file) != 1)
     errx(EX_OSFILE, "Failed to fread() file %s", filename);
@@ -368,7 +416,7 @@ extract_symbol_table(const struct mach_header_64 *hdr, struct mach_config *img_c
 
   for (i = 0; i < hdr->ncmds; i++, (lc = (const struct load_command *)((char *)lc + lc->cmdsize))) {
     if (lc->cmd == LC_SYMTAB) {
-      dbg_printf("found an LC_SYMTAB load command.\n");
+      // dbg_printf("found an LC_SYMTAB load command.\n");
       const struct symtab_command *sc = (const struct symtab_command*) lc;
       const struct nlist_64 *file_symtbl = (const struct nlist_64*)((const char*)hdr + sc->symoff);
 
@@ -384,16 +432,19 @@ extract_symbol_table(const struct mach_header_64 *hdr, struct mach_config *img_c
 
       img_cfg->symbol_table = file_symtbl;
       img_cfg->sorted_symbol_table = new_symtbl;
-      img_cfg->string_table = new_strtbl;
       img_cfg->symbol_count = sc->nsyms;
+
+      img_cfg->string_table = new_strtbl;
       img_cfg->string_table_size = sc->strsize;
+
     } else if (lc->cmd == LC_DYSYMTAB) {
-      dbg_printf("found an LC_DYSYMTAB load command.\n");
+      // dbg_printf("found an LC_DYSYMTAB load command.\n");
       const struct dysymtab_command *dynsym = (const struct dysymtab_command *) lc;
       img_cfg->nindirectsyms = dynsym->nindirectsyms;
       img_cfg->indirectsymoff = dynsym->indirectsymoff;
+
     } else if (lc->cmd == LC_SEGMENT_64) {
-      dbg_printf("found an LC_SEGMENT_64 load command.\n");
+      // dbg_printf("found an LC_SEGMENT_64 load command.\n");
       const struct segment_command_64 *seg = (const struct segment_command_64 *) lc;
       uint32_t i = 0;
       const struct section_64 *asect = (const struct section_64 *)(seg + 1);
@@ -412,11 +463,12 @@ extract_symbol_table(const struct mach_header_64 *hdr, struct mach_config *img_c
           continue;
         }
 
-        dbg_printf("Found a section with symbol stubs: %16s.%16s.\n", asect->segname, asect->sectname);
+        // dbg_printf("Found a section with symbol stubs: %16s.%16s.\n", asect->segname, asect->sectname);
         img_cfg->symstub_sect = asect;
       }
+
     } else {
-      dbg_printf("found another load command that is not being tracked: %" PRId32 "\n", lc->cmd);
+      // dbg_printf("found another load command that is not being tracked: %" PRId32 "\n", lc->cmd);
     }
   }
 
@@ -451,7 +503,8 @@ extract_symbol_data(struct mach_config *img_cfg, struct symbol_data *sym_data)
   assert(img_cfg->symbol_count > 0);
 
   for (i=0; i < img_cfg->symbol_count; i++) {
-    const struct nlist_64 *nlist_entry = img_cfg->sorted_symbol_table[i];
+    // const struct nlist_64 *nlist_entry = img_cfg->sorted_symbol_table[i];
+    const struct nlist_64 *nlist_entry = img_cfg->symbol_table + i;
     const char *string = NULL;
 
     string = get_symtab_string(img_cfg, nlist_entry->n_un.n_strx);
@@ -498,6 +551,64 @@ extract_symbol_data(struct mach_config *img_cfg, struct symbol_data *sym_data)
   }
 }
 
+static void
+free_mach_config(struct mach_config *cfg) {
+  if (cfg == &ruby_img_cfg)
+    return;
+
+  if (cfg->file)
+    free(cfg->file);
+  cfg->file = NULL;
+  free(cfg);
+}
+
+static struct mach_config *
+mach_config_for_index(int index) {
+  if (index >= _dyld_image_count())
+    return NULL;
+
+  if (index == ruby_img_cfg.index)
+    return &ruby_img_cfg;
+
+  const struct dyld_image_info *image = dyld_get_image_info_for_index(index);
+  struct mach_config *cfg = calloc(1, sizeof(struct mach_config));
+
+  cfg->index = index;
+  cfg->filename = image->imageFilePath;
+  cfg->file = read_file(image->imageFilePath);
+  cfg->image_offset = _dyld_get_image_vmaddr_slide(index);
+  cfg->load_addr = image->imageLoadAddress;
+
+  struct mach_header_64 *hdr = (struct mach_header_64*) cfg->file;
+  assert(hdr);
+
+  if (hdr->magic == FAT_CIGAM) {
+    int j;
+    struct fat_header *fat = (struct fat_header *)hdr;
+
+    for(j=0; j < NXSwapInt(fat->nfat_arch); j++) {
+      struct fat_arch *arch = (struct fat_arch *)((char*)fat + sizeof(struct fat_header) + sizeof(struct fat_arch) * j);
+
+      if (NXSwapInt(arch->cputype) == CPU_TYPE_X86_64) {
+        hdr = (struct mach_header_64 *)(cfg->file + NXSwapInt(arch->offset));
+        break;
+      }
+    }
+  }
+
+  if (hdr->magic != MH_MAGIC_64) {
+    printf("Magic for Ruby Mach-O file doesn't match\n");
+    free(cfg->file);
+    free(cfg);
+    return NULL;
+  }
+
+  extract_symbol_table(hdr, cfg);
+  cfg->hdr = hdr;
+
+  return cfg;
+}
+
 void *
 bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
   struct symbol_data sym_data;
@@ -507,9 +618,31 @@ bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
 
   extract_symbol_data(&ruby_img_cfg, &sym_data);
 
+  if (!sym_data.address && search_libs) {
+    int i, header_count = _dyld_image_count();
+
+    for (i=0; i < header_count; i++) {
+      const struct dyld_image_info *image = dyld_get_image_info_for_index(i);
+
+      if ((void*)image->imageLoadAddress == &_mh_bundle_header ||
+          (void*)image->imageLoadAddress == &_mh_execute_header)
+        continue;
+
+      struct mach_config *cfg = mach_config_for_index(i);
+      if (cfg) {
+        extract_symbol_data(cfg, &sym_data);
+        if (sym_data.address) {
+          sym_data.address = (void*)image->imageLoadAddress + (size_t)sym_data.address;
+          free_mach_config(cfg);
+          break;
+        }
+        free_mach_config(cfg);
+      }
+    }
+  }
+
   if (size)
     *size = sym_data.size;
-
   return sym_data.address;
 }
 
@@ -556,11 +689,28 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig
   for (i=0; i < header_count; i++) {
     const struct mach_header *current_hdr = NULL;
 
-    if ((current_hdr = should_update_image(i)) == NULL)
-      continue;
+    if ((void*)_dyld_get_image_header(i) == &_mh_bundle_header)
+      continue; // always ignore memprof.bundle
 
-    if (update_bin_for_mach_header(current_hdr, _dyld_get_image_vmaddr_slide(i), trampee_addr, tramp) == 0)
+    struct mach_config *cfg = mach_config_for_index(i);
+    void *stub = find_stub_addr(trampee, cfg);
+
+    if (stub) {
+      struct dyld_stub_entry *entry = (struct dyld_stub_entry *)stub;
+      if (orig_function)
+        *orig_function = get_dyld_stub_target(entry);
+      set_dyld_stub_target(entry, tramp->addr);
+
       ret = 0;
+      free_mach_config(cfg);
+
+    } else if (trampee_addr) {
+      if ((current_hdr = should_update_image(i)) == NULL)
+        continue;
+
+      if (update_bin_for_mach_header(current_hdr, _dyld_get_image_vmaddr_slide(i), trampee_addr, tramp) == 0)
+        ret = 0;
+    }
   }
   return ret;
 }
@@ -614,15 +764,18 @@ bin_init()
   if (!dladdr(ptr, &info) || !info.dli_fname)
     errx(EX_SOFTWARE, "Could not find the Mach object associated with rb_newobj.");
 
-  ruby_img_cfg.file =  read_file(info.dli_fname);
+  ruby_img_cfg.file = read_file(info.dli_fname);
   struct mach_header_64 *hdr = (struct mach_header_64*) ruby_img_cfg.file;
   assert(hdr);
+  ruby_img_cfg.hdr = hdr;
 
   if (hdr->magic != MH_MAGIC_64)
     errx(EX_SOFTWARE, "Magic for Ruby Mach-O file doesn't match");
 
   index = find_dyld_image_index((const struct mach_header_64*) info.dli_fbase);
   ruby_img_cfg.image_offset = _dyld_get_image_vmaddr_slide(index);
+  ruby_img_cfg.index = index;
+  ruby_img_cfg.load_addr = dyld_get_image_info_for_index(index)->imageLoadAddress;
 
   extract_symbol_table(hdr, &ruby_img_cfg);
 
@@ -630,6 +783,7 @@ bin_init()
   assert(ruby_img_cfg.string_table != NULL);
   assert(ruby_img_cfg.symbol_count > 0);
 
-  free(hdr);
+  // XXX: do not free this, since we're using the symbol and string tables from inside the file
+  // free(hdr);
 }
 #endif
