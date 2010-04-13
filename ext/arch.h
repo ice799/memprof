@@ -13,6 +13,8 @@
 #error "Unsupported architecture! Cannot continue compilation."
 #endif
 
+#include "x86_gen.h"
+
 /*
  * arch_get_st2_tramp - architecture specific stage 2 trampoline getter
  *
