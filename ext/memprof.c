@@ -1836,6 +1836,7 @@ Init_memprof()
   install_gc_tracer();
   install_objcount_tracer();
   install_fd_tracer();
+  install_mysql_tracer();
 
   gc_hook = Data_Wrap_Struct(rb_cObject, sourcefile_marker, NULL, NULL);
   rb_global_variable(&gc_hook);
