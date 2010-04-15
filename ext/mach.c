@@ -130,7 +130,7 @@ find_stub_addr(const char *symname, struct mach_config *img_cfg)
       if (stubaddr) {
         if (img_cfg->index != 0) // don't add load_addr for main exe
           stubaddr = (char*)img_cfg->load_addr + stubaddr;
-        dbg_printf("address of stub for %s is %" PRId64 "\n", string, stubaddr);
+        dbg_printf("address of stub in %s for %s is %" PRId64 "\n", img_cfg->filename, string, stubaddr);
         return (void *)stubaddr;
       }
     }
