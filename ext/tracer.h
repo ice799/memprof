@@ -30,4 +30,8 @@ trace_invoke(const char *id, trace_fn fn);
 
 /* for now, these will live here */
 extern void install_malloc_tracer();
+extern void install_gc_tracer();
+extern void install_fd_tracer();
+extern void install_mysql_tracer();
+extern void install_objcount_tracer();
 #endif

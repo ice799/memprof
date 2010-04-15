@@ -34,12 +34,12 @@ struct mach_config {
   uint32_t symbol_count;
   uint32_t string_table_size;
   intptr_t image_offset;
-  intptr_t load_addr;
+  const struct mach_header* load_addr;
   uint32_t nindirectsyms;
   uint32_t indirectsymoff;
   void *file;
-  char *filename;
-  int index;
+  const char *filename;
+  unsigned int index;
 };
 
 struct symbol_data {
@@ -129,13 +129,13 @@ find_stub_addr(const char *symname, struct mach_config *img_cfg)
     if (strcmp(symname, string+1) == 0) {
       if (stubaddr) {
         if (img_cfg->index != 0) // don't add load_addr for main exe
-          stubaddr = (char*)img_cfg->load_addr + stubaddr;
+          stubaddr = (uint64_t)img_cfg->load_addr + stubaddr;
         dbg_printf("address of stub in %s for %s is %" PRId64 "\n", img_cfg->filename, string, stubaddr);
         return (void *)stubaddr;
       }
     }
   }
-  dbg_printf("couldn't find address of stub: %s\n", symname);
+  dbg_printf("couldn't find address of stub: %s in %s\n", symname, img_cfg->filename);
   return NULL;
 }
 
@@ -191,8 +191,9 @@ dyld_get_image_info_for_index(int index) {
   const struct dyld_all_image_infos *images = dyld_get_all_images();
 
   // Stupid indexes into the infoArray don't match indexes used elsewhere, so we have to loop
-  int i;
-  const struct mach_header_64 *hdr = _dyld_get_image_header(index);
+  unsigned int i;
+  const struct mach_header *hdr = _dyld_get_image_header(index);
+
   for(i=0; i < _dyld_image_count(); i++) {
     const struct dyld_image_info image = images->infoArray[i];
     if (hdr == image.imageLoadAddress)
@@ -563,7 +564,7 @@ free_mach_config(struct mach_config *cfg) {
 }
 
 static struct mach_config *
-mach_config_for_index(int index) {
+mach_config_for_index(unsigned int index) {
   if (index >= _dyld_image_count())
     return NULL;
 
@@ -583,14 +584,14 @@ mach_config_for_index(int index) {
   assert(hdr);
 
   if (hdr->magic == FAT_CIGAM) {
-    int j;
+    unsigned int j;
     struct fat_header *fat = (struct fat_header *)hdr;
 
-    for(j=0; j < NXSwapInt(fat->nfat_arch); j++) {
+    for(j=0; j < OSSwapInt32(fat->nfat_arch); j++) {
       struct fat_arch *arch = (struct fat_arch *)((char*)fat + sizeof(struct fat_header) + sizeof(struct fat_arch) * j);
 
-      if (NXSwapInt(arch->cputype) == CPU_TYPE_X86_64) {
-        hdr = (struct mach_header_64 *)(cfg->file + NXSwapInt(arch->offset));
+      if (OSSwapInt32(arch->cputype) == CPU_TYPE_X86_64) {
+        hdr = (struct mach_header_64 *)(cfg->file + OSSwapInt32(arch->offset));
         break;
       }
     }
@@ -604,7 +605,7 @@ mach_config_for_index(int index) {
   }
 
   extract_symbol_table(hdr, cfg);
-  cfg->hdr = hdr;
+  cfg->hdr = (const struct mach_header *)hdr;
 
   return cfg;
 }
@@ -744,12 +745,15 @@ bin_allocate_page()
 size_t
 bin_type_size(const char *type)
 {
+  (void) type;
   return 0;
 }
 
 int
 bin_type_member_offset(const char *type, const char *member)
 {
+  (void) type;
+  (void) member;
   return -1;
 }
 
@@ -775,7 +779,7 @@ bin_init()
   ruby_img_cfg.file = read_file(info.dli_fname);
   struct mach_header_64 *hdr = (struct mach_header_64*) ruby_img_cfg.file;
   assert(hdr);
-  ruby_img_cfg.hdr = hdr;
+  ruby_img_cfg.hdr = (const struct mach_header *)hdr;
 
   if (hdr->magic != MH_MAGIC_64)
     errx(EX_SOFTWARE, "Magic for Ruby Mach-O file doesn't match");

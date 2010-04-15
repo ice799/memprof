@@ -107,7 +107,7 @@ hook_freelist(int entry, void *tramp)
     }
 
     /* if we've looked at all the bytes in this function... */
-    if (((void *)byte - freelist_inliners[i]) >= sizes[i]) {
+    if ((size_t)((void *)byte - freelist_inliners[i]) >= sizes[i]) {
       /* move on to the next function */
       i++;
       byte = freelist_inliners[i];
