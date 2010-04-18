@@ -6,6 +6,7 @@
 
 #include "arch.h"
 #include "bin_api.h"
+#include "json.h"
 #include "tracer.h"
 #include "tramp.h"
 #include "util.h"
@@ -16,7 +17,7 @@ struct memprof_gc_stats {
 };
 
 static struct tracer tracer;
-static struct memprof_gc_stats memprof_gc_stats;
+static struct memprof_gc_stats stats;
 static void (*orig_garbage_collect)();
 
 static void
@@ -32,8 +33,8 @@ gc_tramp()
   secs += end.tv_sec - start.tv_sec;
   secs += (end.tv_usec - start.tv_usec) / 1000000.0;
 
-  memprof_gc_stats.gc_time += secs;
-  memprof_gc_stats.gc_calls++;
+  stats.gc_time += secs;
+  stats.gc_calls++;
 }
 
 static void
@@ -52,14 +53,27 @@ gc_trace_stop() {
 
 static void
 gc_trace_reset() {
-  memset(&memprof_gc_stats, 0, sizeof(memprof_gc_stats));
+  memset(&stats, 0, sizeof(stats));
 }
 
 static void
-gc_trace_dump() {
-  fprintf(stderr, "================ GC =======================================\n");
-  fprintf(stderr, " # calls: %zd\n time: %fs\n", memprof_gc_stats.gc_calls, memprof_gc_stats.gc_time);
-  fprintf(stderr, "===========================================================\n\n");
+gc_trace_dump(yajl_gen gen) {
+  yajl_gen_map_open(gen);
+
+  yajl_gen_cstr(gen, "type");
+  yajl_gen_cstr(gen, tracer.id);
+
+  yajl_gen_cstr(gen, "calls");
+  yajl_gen_integer(gen, stats.gc_calls);
+
+  yajl_gen_cstr(gen, "time");
+  yajl_gen_double(gen, stats.gc_time);
+
+  yajl_gen_map_close(gen);
+
+  // fprintf(stderr, "================ GC =======================================\n");
+  // fprintf(stderr, " # calls: %zd\n time: %fs\n", stats.gc_calls, stats.gc_time);
+  // fprintf(stderr, "===========================================================\n\n");
 }
 
 void install_gc_tracer()
@@ -68,7 +82,7 @@ void install_gc_tracer()
   tracer.stop = gc_trace_stop;
   tracer.reset = gc_trace_reset;
   tracer.dump = gc_trace_dump;
-  tracer.id = strdup("gc_tracer");
+  tracer.id = "gc";
 
   trace_insert(&tracer);
 }

@@ -329,6 +329,17 @@ memprof_stats_bang(int argc, VALUE *argv, VALUE self)
   return Qnil;
 }
 
+static void
+json_print(void *ctx, const char * str, unsigned int len)
+{
+  FILE *out = (FILE *)ctx;
+  size_t written = 0;
+  while(1) {
+    written += fwrite(str + written, sizeof(char), len - written, out ? out : stdout);
+    if (written == len) break;
+  }
+}
+
 static VALUE
 memprof_track(int argc, VALUE *argv, VALUE self)
 {
@@ -343,21 +354,80 @@ memprof_track(int argc, VALUE *argv, VALUE self)
 }
 
 static VALUE
-memprof_track_fun(int argc, VALUE *argv, VALUE self)
+memprof_trace(VALUE self)
 {
   if (!rb_block_given_p())
     rb_raise(rb_eArgError, "block required");
 
+  trace_set_output(NULL);
+  trace_invoke_all(TRACE_RESET);
   trace_invoke_all(TRACE_START);
   rb_yield(Qnil);
   trace_invoke_all(TRACE_DUMP);
   trace_invoke_all(TRACE_STOP);
-  trace_invoke_all(TRACE_RESET);
   return Qnil;
 }
 
-#include <yajl/yajl_gen.h>
-#include <stdarg.h>
+static int
+each_request_entry(st_data_t key, st_data_t record, st_data_t arg)
+{
+  yajl_gen gen = (yajl_gen)arg;
+  VALUE k = (VALUE)key;
+  VALUE v = (VALUE)record;
+
+  yajl_gen_array_open(gen);
+  yajl_gen_cstr(gen, StringValueCStr(k));
+  yajl_gen_cstr(gen, StringValueCStr(v));
+  yajl_gen_array_close(gen);
+
+  return ST_CONTINUE;
+}
+
+static VALUE
+memprof_trace_request(VALUE self, VALUE env)
+{
+  if (!rb_block_given_p())
+    rb_raise(rb_eArgError, "block required");
+
+  struct timeval now;
+  gettimeofday(&now, NULL);
+
+  yajl_gen_config conf = { .beautify = 0, .indentString = "  " };
+  yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)stderr);
+
+  yajl_gen_map_open(gen);
+
+  yajl_gen_cstr(gen, "time");
+  yajl_gen_integer(gen, (now.tv_sec * 1000000) + now.tv_usec);
+
+  if (BUILTIN_TYPE(env) == T_HASH) {
+    yajl_gen_cstr(gen, "request");
+
+    struct RHash *hash = RHASH(env);
+    yajl_gen_array_open(gen);
+    st_foreach(hash->tbl, each_request_entry, (st_data_t)gen);
+    yajl_gen_array_close(gen);
+  }
+
+  yajl_gen_cstr(gen, "tracers");
+  yajl_gen_array_open(gen);
+
+  trace_set_output(gen);
+  trace_invoke_all(TRACE_RESET);
+  trace_invoke_all(TRACE_START);
+  VALUE ret = rb_yield(Qnil);
+  trace_invoke_all(TRACE_DUMP);
+  trace_invoke_all(TRACE_STOP);
+
+  yajl_gen_array_close(gen);
+  yajl_gen_map_close(gen);
+  yajl_gen_reset(gen);
+  yajl_gen_free(gen);
+
+  return ret;
+}
+
+#include "json.h"
 #include "env.h"
 #include "rubyio.h"
 #include "re.h"
@@ -378,72 +448,6 @@ memprof_track_fun(int argc, VALUE *argv, VALUE self)
 #define RSTRING_LEN(str) RSTRING(str)->len
 #endif
 
-/* HAX: copied from internal yajl_gen.c (PATCH yajl before building instead)
- */
-
-typedef enum {
-    yajl_gen_start,
-    yajl_gen_map_start,
-    yajl_gen_map_key,
-    yajl_gen_map_val,
-    yajl_gen_array_start,
-    yajl_gen_in_array,
-    yajl_gen_complete,
-    yajl_gen_error
-} yajl_gen_state;
-
-struct yajl_gen_t
-{
-    unsigned int depth;
-    unsigned int pretty;
-    const char * indentString;
-    yajl_gen_state state[YAJL_MAX_DEPTH];
-    yajl_print_t print;
-    void * ctx; /* yajl_buf */
-    /* memory allocation routines */
-    yajl_alloc_funcs alloc;
-};
-
-static void
-yajl_gen_reset(yajl_gen gen)
-{
-  yajl_gen_clear(gen);
-  assert (gen->state[gen->depth] == yajl_gen_complete);
-  gen->state[gen->depth] = yajl_gen_start;
-  gen->print(gen->ctx, "\n", 1);
-}
-
-/* END HAX
- */
-
-static yajl_gen_status
-yajl_gen_cstr(yajl_gen gen, const char * str)
-{
-  if (!str || str[0] == 0)
-    return yajl_gen_null(gen);
-  else
-    return yajl_gen_string(gen, (unsigned char *)str, strlen(str));
-}
-
-static yajl_gen_status
-yajl_gen_format(yajl_gen gen, char *format, ...)
-{
-  va_list args;
-  char *str;
-  int bytes_printed = 0;
-
-  yajl_gen_status ret;
-
-  va_start(args, format);
-  bytes_printed = vasprintf(&str, format, args);
-  assert(bytes_printed != -1);
-  va_end(args);
-
-  ret = yajl_gen_string(gen, (unsigned char *)str, strlen(str));
-  free(str);
-  return ret;
-}
-
 static yajl_gen_status
 yajl_gen_id(yajl_gen gen, ID id)
 {
@@ -454,12 +458,6 @@ yajl_gen_id(yajl_gen gen, ID id)
       return yajl_gen_format(gen, ":%s", rb_id2name(id));
   } else
     return yajl_gen_null(gen);
-}
-
-static yajl_gen_status
-yajl_gen_pointer(yajl_gen gen, void* ptr)
-{
-  return yajl_gen_format(gen, "0x%x", ptr);
 }
 
 static yajl_gen_status
@@ -1469,17 +1467,6 @@ memprof_dump_finalizers(yajl_gen gen)
   }
 }
 
-static void
-json_print(void *ctx, const char * str, unsigned int len)
-{
-  FILE *out = (FILE *)ctx;
-  size_t written = 0;
-  while(1) {
-    written += fwrite(str + written, sizeof(char), len - written, out ? out : stdout);
-    if (written == len) break;
-  }
-}
-
 static VALUE
 memprof_dump(int argc, VALUE *argv, VALUE self)
 {
@@ -1824,7 +1811,8 @@ Init_memprof()
   rb_define_singleton_method(memprof, "track", memprof_track, -1);
   rb_define_singleton_method(memprof, "dump", memprof_dump, -1);
   rb_define_singleton_method(memprof, "dump_all", memprof_dump_all, -1);
-  rb_define_singleton_method(memprof, "trace", memprof_track_fun, -1);
+  rb_define_singleton_method(memprof, "trace", memprof_trace, 0);
+  rb_define_singleton_method(memprof, "trace_request", memprof_trace_request, 1);
 
   objs = st_init_numtable();
   init_memprof_config_base();

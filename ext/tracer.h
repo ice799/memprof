@@ -1,12 +1,14 @@
 #if !defined(__TRACER__H_)
 #define __TRACER__H_
 
+#include "json.h"
+
 struct tracer {
   char *id;
   void (*start)();
   void (*stop)();
   void (*reset)();
-  void (*dump)();
+  void (*dump)(yajl_gen);
 };
 
 typedef enum {
@@ -27,6 +29,9 @@ trace_invoke_all(trace_fn fn);
 
 int
 trace_invoke(const char *id, trace_fn fn);
+
+void
+trace_set_output(yajl_gen gen);
 
 /* for now, these will live here */
 extern void install_malloc_tracer();

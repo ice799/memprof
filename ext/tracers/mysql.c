@@ -7,6 +7,7 @@
 
 #include "arch.h"
 #include "bin_api.h"
+#include "json.h"
 #include "tracer.h"
 #include "tramp.h"
 #include "util.h"
@@ -17,7 +18,7 @@ struct memprof_mysql_stats {
 };
 
 static struct tracer tracer;
-static struct memprof_mysql_stats memprof_mysql_stats;
+static struct memprof_mysql_stats stats;
 static int (*orig_real_query)(void *mysql, const char *stmt_str, unsigned long length);
 
 static int
@@ -33,8 +34,8 @@ real_query_tramp(void *mysql, const char *stmt_str, unsigned long length) {
   secs += end.tv_sec - start.tv_sec;
   secs += (end.tv_usec - start.tv_usec) / 1000000.0;
 
-  memprof_mysql_stats.query_time += secs;
-  memprof_mysql_stats.query_calls++;
+  stats.query_time += secs;
+  stats.query_calls++;
 
   return ret;
 }
@@ -53,15 +54,30 @@ mysql_trace_stop() {
 
 static void
 mysql_trace_reset() {
-  memset(&memprof_mysql_stats, 0, sizeof(memprof_mysql_stats));
+  memset(&stats, 0, sizeof(stats));
 }
 
 static void
-mysql_trace_dump() {
-  fprintf(stderr, "================ Mysql ====================================\n");
-  fprintf(stderr, " # queries: %zd\n", memprof_mysql_stats.query_calls);
-  fprintf(stderr, " time querying: %fs\n", memprof_mysql_stats.query_time);
-  fprintf(stderr, "===========================================================\n\n");
+mysql_trace_dump(yajl_gen gen) {
+  if (stats.query_calls > 0) {
+    yajl_gen_map_open(gen);
+
+    yajl_gen_cstr(gen, "type");
+    yajl_gen_cstr(gen, tracer.id);
+
+    yajl_gen_cstr(gen, "queries");
+    yajl_gen_integer(gen, stats.query_calls);
+
+    yajl_gen_cstr(gen, "time");
+    yajl_gen_double(gen, stats.query_time);
+
+    yajl_gen_map_close(gen);
+  }
+
+  // fprintf(stderr, "================ Mysql ====================================\n");
+  // fprintf(stderr, " # queries: %zd\n", stats.query_calls);
+  // fprintf(stderr, " time querying: %fs\n", stats.query_time);
+  // fprintf(stderr, "===========================================================\n\n");
 }
 
 void install_mysql_tracer()
@@ -70,7 +86,7 @@ void install_mysql_tracer()
   tracer.stop = mysql_trace_stop;
   tracer.reset = mysql_trace_reset;
   tracer.dump = mysql_trace_dump;
-  tracer.id = strdup("mysql_tracer");
+  tracer.id = "mysql";
 
   trace_insert(&tracer);
 }
