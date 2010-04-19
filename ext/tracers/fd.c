@@ -90,7 +90,13 @@ fd_trace_start() {
 
 static void
 fd_trace_stop() {
-  // TODO: figure out how to undo the tramp
+  struct tramp_st2_entry tmp;
+
+  tmp.addr = read;
+  bin_update_image("read", &tmp, NULL);
+
+  tmp.addr = connect;
+  bin_update_image("connect", &tmp, NULL);
 }
 
 static void

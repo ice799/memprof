@@ -42,11 +42,16 @@ objects_tramp() {
 
 static void
 objects_trace_start() {
-  orig_rb_newobj = bin_find_symbol("rb_newobj", NULL, 0);
-  assert(orig_rb_newobj != NULL);
-  dbg_printf("orig_rb_newobj: %p\n", orig_rb_newobj);
+  static int inserted = 0;
+  if (!inserted) {
+    inserted = 1;
 
-  insert_tramp("rb_newobj", objects_tramp);
+    orig_rb_newobj = bin_find_symbol("rb_newobj", NULL, 0);
+    assert(orig_rb_newobj != NULL);
+    dbg_printf("orig_rb_newobj: %p\n", orig_rb_newobj);
+
+    insert_tramp("rb_newobj", objects_tramp);
+  }
 }
 
 static void

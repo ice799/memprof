@@ -49,7 +49,9 @@ mysql_trace_start() {
 
 static void
 mysql_trace_stop() {
-  // TODO: figure out how to undo the tramp
+  struct tramp_st2_entry tmp;
+  tmp.addr = orig_real_query;
+  bin_update_image("mysql_real_query", &tmp, NULL);
 }
 
 static void

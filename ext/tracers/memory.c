@@ -122,10 +122,8 @@ malloc_trace_stop()
   tmp.addr = orig_realloc;
   bin_update_image("realloc", &tmp, NULL);
 
-  if (orig_calloc) {
-    tmp.addr = orig_calloc;
-    bin_update_image("calloc", &tmp, NULL);
-  }
+  tmp.addr = orig_calloc;
+  bin_update_image("calloc", &tmp, NULL);
 
   tmp.addr = orig_free;
   bin_update_image("free", &tmp, NULL);
