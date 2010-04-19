@@ -23,13 +23,18 @@ static VALUE (*orig_rb_newobj)();
 static VALUE last_obj = 0;
 static VALUE gc_hook = 0;
 
-static VALUE
-objects_tramp() {
+static void
+record_last_obj()
+{
   if (last_obj) {
     stats.types[BUILTIN_TYPE(last_obj)]++;
     last_obj = 0;
   }
+}
 
+static VALUE
+objects_tramp() {
+  record_last_obj();
   stats.newobj_calls++;
   last_obj = orig_rb_newobj();
   return last_obj;
@@ -58,6 +63,7 @@ objects_trace_reset() {
 static void
 objects_trace_dump(yajl_gen gen) {
   int i;
+  record_last_obj();
 
   yajl_gen_cstr(gen, "created");
   yajl_gen_integer(gen, stats.newobj_calls);
@@ -77,19 +83,10 @@ objects_trace_dump(yajl_gen gen) {
   // fprintf(stderr, "===========================================================\n\n");
 }
 
-static void
-gc_hooker()
-{
-  if (last_obj) {
-    stats.types[BUILTIN_TYPE(last_obj)]++;
-    last_obj = 0;
-  }
-}
-
 void install_objects_tracer()
 {
   if (!gc_hook) {
-    gc_hook = Data_Wrap_Struct(rb_cObject, gc_hooker, NULL, NULL);
+    gc_hook = Data_Wrap_Struct(rb_cObject, record_last_obj, NULL, NULL);
     rb_global_variable(&gc_hook);
   }
 
