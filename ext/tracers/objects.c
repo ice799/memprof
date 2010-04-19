@@ -60,6 +60,64 @@ objects_trace_reset() {
   last_obj = 0;
 }
 
+static inline char*
+type_string(int type) {
+  switch (type) {
+    case T_NONE:
+      return "none";
+    case T_NIL:
+      return "nil";
+    case T_OBJECT:
+      return "object";
+    case T_CLASS:
+      return "class";
+    case T_ICLASS:
+      return "iclass";
+    case T_MODULE:
+      return "module";
+    case T_FLOAT:
+      return "float";
+    case T_STRING:
+      return "string";
+    case T_REGEXP:
+      return "regexp";
+    case T_ARRAY:
+      return "array";
+    case T_FIXNUM:
+      return "fixnum";
+    case T_HASH:
+      return "hash";
+    case T_STRUCT:
+      return "struct";
+    case T_BIGNUM:
+      return "bignum";
+    case T_FILE:
+      return "file";
+    case T_TRUE:
+      return "true";
+    case T_FALSE:
+      return "false";
+    case T_DATA:
+      return "data";
+    case T_MATCH:
+      return "match";
+    case T_SYMBOL:
+      return "symbol";
+    case T_BLKTAG:
+      return "blktag";
+    case T_UNDEF:
+      return "undef";
+    case T_VARMAP:
+      return "varmap";
+    case T_SCOPE:
+      return "scope";
+    case T_NODE:
+      return "node";
+    default:
+      return "unknown";
+  }
+}
+
 static void
 objects_trace_dump(yajl_gen gen) {
   int i;
@@ -72,7 +130,7 @@ objects_trace_dump(yajl_gen gen) {
   yajl_gen_map_open(gen);
   for (i=0; i<T_MASK+1; i++) {
     if (stats.types[i] > 0) {
-      yajl_gen_format(gen, "%d", i);
+      yajl_gen_cstr(gen, type_string(i));
       yajl_gen_integer(gen, stats.types[i]);
     }
   }
