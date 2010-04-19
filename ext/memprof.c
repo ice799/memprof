@@ -400,7 +400,7 @@ memprof_trace_request(VALUE self, VALUE env)
   yajl_gen_cstr(gen, "time");
   yajl_gen_integer(gen, (now.tv_sec * 1000000) + now.tv_usec);
 
-  if (BUILTIN_TYPE(env) == T_HASH) {
+  if (RTEST(env) && BUILTIN_TYPE(env) == T_HASH) {
     yajl_gen_cstr(gen, "request");
 
     struct RHash *hash = RHASH(env);
@@ -1822,7 +1822,7 @@ Init_memprof()
 
   install_malloc_tracer();
   install_gc_tracer();
-  install_objcount_tracer();
+  install_objects_tracer();
   install_fd_tracer();
   install_mysql_tracer();
 

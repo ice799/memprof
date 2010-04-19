@@ -9,7 +9,7 @@
 #include "tracer.h"
 #include "util.h"
 
-struct memprof_malloc_stats {
+struct memprof_memory_stats {
   size_t malloc_bytes_requested;
   size_t calloc_bytes_requested;
   size_t realloc_bytes_requested;
@@ -26,7 +26,7 @@ struct memprof_malloc_stats {
 };
 
 static struct tracer tracer;
-static struct memprof_malloc_stats stats;
+static struct memprof_memory_stats stats;
 static void *(*orig_malloc)(size_t), *(*orig_realloc)(void *, size_t),
             *(*orig_calloc)(size_t, size_t), (*orig_free)(void *);
 static size_t (*malloc_usable_size)(void *ptr);
@@ -74,6 +74,44 @@ free_tramp(void *ptr)
 }
 
 static void
+malloc_trace_start()
+{
+  struct tramp_st2_entry tmp;
+
+  if (!malloc_usable_size) {
+    malloc_usable_size = bin_find_symbol("MallocExtension_GetAllocatedSize", NULL, 1);
+    if (!malloc_usable_size) {
+      dbg_printf("tcmalloc was not found...\n");
+      malloc_usable_size = bin_find_symbol("malloc_usable_size", NULL, 1);
+    }
+    if (!malloc_usable_size) {
+      dbg_printf("malloc_usable_size was not found...\n");
+      malloc_usable_size = bin_find_symbol("malloc_size", NULL, 1);
+    }
+    assert(malloc_usable_size != NULL);
+    dbg_printf("malloc_usable_size: %p\n", malloc_usable_size);
+  }
+
+  tmp.addr = malloc_tramp;
+  bin_update_image("malloc", &tmp, (void **)(&orig_malloc));
+  assert(orig_malloc != NULL);
+  dbg_printf("orig_malloc: %p\n", orig_malloc);
+
+  tmp.addr = realloc_tramp;
+  bin_update_image("realloc", &tmp,(void **)(&orig_realloc));
+  dbg_printf("orig_realloc: %p\n", orig_realloc);
+
+  tmp.addr = calloc_tramp;
+  bin_update_image("calloc", &tmp, (void **)(&orig_calloc));
+  dbg_printf("orig_calloc: %p\n", orig_calloc);
+
+  tmp.addr = free_tramp;
+  bin_update_image("free", &tmp, (void **)(&orig_free));
+  assert(orig_free != NULL);
+  dbg_printf("orig_free: %p\n", orig_free);
+}
+
+static void
 malloc_trace_stop()
 {
   struct tramp_st2_entry tmp;
@@ -114,7 +152,7 @@ malloc_trace_dump(yajl_gen gen)
     yajl_gen_map_close(gen);
   }
 
-  if (stats.malloc_calls > 0) {
+  if (stats.realloc_calls > 0) {
     yajl_gen_cstr(gen, "realloc");
     yajl_gen_map_open(gen);
     yajl_gen_cstr(gen, "calls");
@@ -163,44 +201,6 @@ malloc_trace_dump(yajl_gen gen)
   //     stats.malloc_bytes_actual, stats.realloc_bytes_actual,
   //     stats.calloc_bytes_actual, stats.free_bytes_actual);
   // fprintf(stderr, "===========================================================\n\n");
-}
-
-static void
-malloc_trace_start()
-{
-  struct tramp_st2_entry tmp;
-
-  if (!malloc_usable_size) {
-    malloc_usable_size = bin_find_symbol("MallocExtension_GetAllocatedSize", NULL, 1);
-    if (!malloc_usable_size) {
-      dbg_printf("tcmalloc was not found...\n");
-      malloc_usable_size = bin_find_symbol("malloc_usable_size", NULL, 1);
-    }
-    if (!malloc_usable_size) {
-      dbg_printf("malloc_usable_size was not found...\n");
-      malloc_usable_size = bin_find_symbol("malloc_size", NULL, 1);
-    }
-    assert(malloc_usable_size != NULL);
-    dbg_printf("malloc_usable_size: %p\n", malloc_usable_size);
-  }
-
-  tmp.addr = malloc_tramp;
-  bin_update_image("malloc", &tmp, (void **)(&orig_malloc));
-  assert(orig_malloc != NULL);
-  dbg_printf("orig_malloc: %p\n", orig_malloc);
-
-  tmp.addr = realloc_tramp;
-  bin_update_image("realloc", &tmp,(void **)(&orig_realloc));
-  dbg_printf("orig_realloc: %p\n", orig_realloc);
-
-  tmp.addr = calloc_tramp;
-  bin_update_image("calloc", &tmp, (void **)(&orig_calloc));
-  dbg_printf("orig_calloc: %p\n", orig_calloc);
-
-  tmp.addr = free_tramp;
-  bin_update_image("free", &tmp, (void **)(&orig_free));
-  assert(orig_free != NULL);
-  dbg_printf("orig_free: %p\n", orig_free);
 }
 
 void install_malloc_tracer()

@@ -8,6 +8,7 @@
 #include "util.h"
 
 static yajl_gen_config json_conf = { .beautify = 0, .indentString = "  " };
+static yajl_gen default_json = NULL;
 static yajl_gen json_gen = NULL;
 
 /*
@@ -73,6 +74,8 @@ do_trace_invoke(struct tracer *trace, trace_fn fn)
       yajl_gen_cstr(json_gen, trace->id);
       trace->dump(json_gen);
       yajl_gen_map_close(json_gen);
+      if (json_gen == default_json)
+        yajl_gen_reset(json_gen);
       break;
     default:
       dbg_printf("invoked a non-existant trace function type: %d", fn);
@@ -123,7 +126,6 @@ trace_set_output(yajl_gen gen)
   if (gen) {
     json_gen = gen;
   } else {
-    static yajl_gen default_json = NULL;
     if (!default_json)
       default_json = yajl_gen_alloc2((yajl_print_t)&json_print, &json_conf, NULL, (void*)stderr);
 
