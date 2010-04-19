@@ -68,7 +68,11 @@ do_trace_invoke(struct tracer *trace, trace_fn fn)
       trace->reset();
       break;
     case TRACE_DUMP:
+      yajl_gen_map_open(json_gen);
+      yajl_gen_cstr(json_gen, "type");
+      yajl_gen_cstr(json_gen, trace->id);
       trace->dump(json_gen);
+      yajl_gen_map_close(json_gen);
       break;
     default:
       dbg_printf("invoked a non-existant trace function type: %d", fn);

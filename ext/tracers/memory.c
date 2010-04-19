@@ -102,11 +102,6 @@ malloc_trace_reset()
 static void
 malloc_trace_dump(yajl_gen gen)
 {
-  yajl_gen_map_open(gen);
-
-  yajl_gen_cstr(gen, "type");
-  yajl_gen_cstr(gen, tracer.id);
-
   if (stats.malloc_calls > 0) {
     yajl_gen_cstr(gen, "malloc");
     yajl_gen_map_open(gen);
@@ -152,8 +147,6 @@ malloc_trace_dump(yajl_gen gen)
     yajl_gen_integer(gen, stats.free_bytes_actual);
     yajl_gen_map_close(gen);
   }
-
-  yajl_gen_map_close(gen);
 
   // fprintf(stderr, "================ Malloc ===================================\n");
   // fprintf(stderr, " Calls to malloc: %zd, realloc: %zd, calloc: %zd, free: %zd\n",

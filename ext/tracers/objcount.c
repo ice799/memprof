@@ -46,15 +46,8 @@ objcount_trace_reset() {
 
 static void
 objcount_trace_dump(yajl_gen gen) {
-  yajl_gen_map_open(gen);
-
-  yajl_gen_cstr(gen, "type");
-  yajl_gen_cstr(gen, tracer.id);
-
   yajl_gen_cstr(gen, "objects");
   yajl_gen_integer(gen, stats.newobj_calls);
-
-  yajl_gen_map_close(gen);
 
   // fprintf(stderr, "================ Objs =====================================\n");
   // fprintf(stderr, " # objs created: %zd\n", stats.newobj_calls);

@@ -100,11 +100,6 @@ fd_trace_reset() {
 
 static void
 fd_trace_dump(yajl_gen gen) {
-  yajl_gen_map_open(gen);
-
-  yajl_gen_cstr(gen, "type");
-  yajl_gen_cstr(gen, tracer.id);
-
   if (stats.read_calls > 0) {
     yajl_gen_cstr(gen, "read");
     yajl_gen_map_open(gen);
@@ -128,8 +123,6 @@ fd_trace_dump(yajl_gen gen) {
     yajl_gen_double(gen, stats.connect_time);
     yajl_gen_map_close(gen);
   }
-
-  yajl_gen_map_close(gen);
 
   // fprintf(stderr, "================ FDs ======================================\n");
   // fprintf(stderr, " # read calls: %zd\n", stats.read_calls);

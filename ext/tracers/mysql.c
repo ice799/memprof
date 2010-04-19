@@ -60,18 +60,11 @@ mysql_trace_reset() {
 static void
 mysql_trace_dump(yajl_gen gen) {
   if (stats.query_calls > 0) {
-    yajl_gen_map_open(gen);
-
-    yajl_gen_cstr(gen, "type");
-    yajl_gen_cstr(gen, tracer.id);
-
     yajl_gen_cstr(gen, "queries");
     yajl_gen_integer(gen, stats.query_calls);
 
     yajl_gen_cstr(gen, "time");
     yajl_gen_double(gen, stats.query_time);
-
-    yajl_gen_map_close(gen);
   }
 
   // fprintf(stderr, "================ Mysql ====================================\n");

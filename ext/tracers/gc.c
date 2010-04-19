@@ -58,18 +58,11 @@ gc_trace_reset() {
 
 static void
 gc_trace_dump(yajl_gen gen) {
-  yajl_gen_map_open(gen);
-
-  yajl_gen_cstr(gen, "type");
-  yajl_gen_cstr(gen, tracer.id);
-
   yajl_gen_cstr(gen, "calls");
   yajl_gen_integer(gen, stats.gc_calls);
 
   yajl_gen_cstr(gen, "time");
   yajl_gen_double(gen, stats.gc_time);
-
-  yajl_gen_map_close(gen);
 
   // fprintf(stderr, "================ GC =======================================\n");
   // fprintf(stderr, " # calls: %zd\n time: %fs\n", stats.gc_calls, stats.gc_time);
