@@ -375,10 +375,13 @@ each_request_entry(st_data_t key, st_data_t record, st_data_t arg)
   VALUE k = (VALUE)key;
   VALUE v = (VALUE)record;
 
-  yajl_gen_array_open(gen);
-  yajl_gen_cstr(gen, StringValueCStr(k));
-  yajl_gen_cstr(gen, StringValueCStr(v));
-  yajl_gen_array_close(gen);
+  if (RTEST(v) && BUILTIN_TYPE(v) == T_STRING && RTEST(k) && BUILTIN_TYPE(k) == T_STRING &&
+      RSTRING_PTR(k)[0] >= 65 && RSTRING_PTR(k)[0] <= 90) {
+    yajl_gen_array_open(gen);
+    yajl_gen_cstr(gen, StringValueCStr(k));
+    yajl_gen_cstr(gen, StringValueCStr(v));
+    yajl_gen_array_close(gen);
+  }
 
   return ST_CONTINUE;
 }
