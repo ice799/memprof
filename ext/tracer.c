@@ -145,7 +145,6 @@ trace_get_time()
   struct timespec tp;
 
   if (clock_gettime(CLOCK_MONOTONIC, &tp) == 0) {
-    printf("%ld.%ld\n", tp.tv_sec, tp.tv_nsec);
     return (double)tp.tv_sec + (double)tp.tv_nsec * 1e-9;
   }
 #endif
