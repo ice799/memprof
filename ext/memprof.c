@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sysexits.h>
+#include <time.h>
 
 #include <st.h>
 #include <intern.h>
@@ -39,6 +40,13 @@ static double
 rb_timeofday()
 {
   struct timeval tv;
+#ifdef CLOCK_MONOTONIC
+  struct timespec tp;
+
+  if (clock_gettime(CLOCK_MONOTONIC, &tp) == 0) {
+    return (double)tp.tv_sec + (double)tp.tv_nsec * 1e-9;
+  }
+#endif
   gettimeofday(&tv, NULL);
   return (double)tv.tv_sec + (double)tv.tv_usec * 1e-6;
 }
