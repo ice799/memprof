@@ -360,12 +360,17 @@ memprof_trace(VALUE self)
     rb_raise(rb_eArgError, "block required");
 
   trace_set_output(NULL);
+  yajl_gen gen = trace_get_output();
+
+  yajl_gen_map_open(gen);
   trace_invoke_all(TRACE_RESET);
   trace_invoke_all(TRACE_START);
-  rb_yield(Qnil);
+  VALUE ret = rb_yield(Qnil);
   trace_invoke_all(TRACE_DUMP);
   trace_invoke_all(TRACE_STOP);
-  return Qnil;
+  yajl_gen_map_close(gen);
+
+  return ret;
 }
 
 static int
@@ -377,10 +382,8 @@ each_request_entry(st_data_t key, st_data_t record, st_data_t arg)
 
   if (RTEST(v) && BUILTIN_TYPE(v) == T_STRING && RTEST(k) && BUILTIN_TYPE(k) == T_STRING &&
       RSTRING_PTR(k)[0] >= 65 && RSTRING_PTR(k)[0] <= 90) {
-    yajl_gen_array_open(gen);
     yajl_gen_cstr(gen, StringValueCStr(k));
     yajl_gen_cstr(gen, StringValueCStr(v));
-    yajl_gen_array_close(gen);
   }
 
   return ST_CONTINUE;
@@ -407,13 +410,13 @@ memprof_trace_request(VALUE self, VALUE env)
     yajl_gen_cstr(gen, "request");
 
     struct RHash *hash = RHASH(env);
-    yajl_gen_array_open(gen);
+    yajl_gen_map_open(gen);
     st_foreach(hash->tbl, each_request_entry, (st_data_t)gen);
-    yajl_gen_array_close(gen);
+    yajl_gen_map_close(gen);
   }
 
   yajl_gen_cstr(gen, "tracers");
-  yajl_gen_array_open(gen);
+  yajl_gen_map_open(gen);
 
   trace_set_output(gen);
   trace_invoke_all(TRACE_RESET);
@@ -422,9 +425,8 @@ memprof_trace_request(VALUE self, VALUE env)
   trace_invoke_all(TRACE_DUMP);
   trace_invoke_all(TRACE_STOP);
 
-  yajl_gen_array_close(gen);
   yajl_gen_map_close(gen);
-  yajl_gen_reset(gen);
+  yajl_gen_map_close(gen);
   yajl_gen_free(gen);
 
   return ret;
