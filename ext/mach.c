@@ -599,8 +599,13 @@ bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
       struct mach_config *cfg = mach_config_for_index(i);
       if (cfg) {
         extract_symbol_data(cfg, &sym_data);
-        if (sym_data.address) {
-          sym_data.address = (void*)image->imageLoadAddress + (size_t)sym_data.address;
+
+        if (sym_data.address == image->imageLoadAddress) { // wtf? this happens for mysql_api.bundle with mysql_real_query
+          sym_data.address = 0;
+        } else if (sym_data.address) {
+          if (cfg->image_offset == 0) // another wtf? happens on libSystem.dylib where we need to add load address, but libmysqlclient.dylib etc are fine
+            sym_data.address = (char*)image->imageLoadAddress + (size_t)sym_data.address;
+          dbg_printf("found symbol %s in %s: %p\n", sym_data.name, image->imageFilePath, sym_data.address);
           free_mach_config(cfg);
           break;
         }

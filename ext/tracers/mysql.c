@@ -42,16 +42,21 @@ real_query_tramp(void *mysql, const char *stmt_str, unsigned long length) {
 
 static void
 mysql_trace_start() {
-  struct tramp_st2_entry tmp;
-  tmp.addr = real_query_tramp;
-  bin_update_image("mysql_real_query", &tmp, (void **)(&orig_real_query));
+  orig_real_query = bin_find_symbol("mysql_real_query", NULL, 1);
+  if (orig_real_query) {
+    struct tramp_st2_entry tmp;
+    tmp.addr = real_query_tramp;
+    bin_update_image("mysql_real_query", &tmp, NULL);
+  }
 }
 
 static void
 mysql_trace_stop() {
-  struct tramp_st2_entry tmp;
-  tmp.addr = orig_real_query;
-  bin_update_image("mysql_real_query", &tmp, NULL);
+  if (orig_real_query) {
+    struct tramp_st2_entry tmp;
+    tmp.addr = orig_real_query;
+    bin_update_image("mysql_real_query", &tmp, NULL);
+  }
 }
 
 static void
