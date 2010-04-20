@@ -23,15 +23,11 @@ static void (*orig_garbage_collect)();
 static void
 gc_tramp()
 {
-  struct timeval start, end;
   double secs = 0;
 
-  gettimeofday (&start, NULL);
+  secs = trace_get_time();
   orig_garbage_collect();
-  gettimeofday (&end, NULL);
-
-  secs += end.tv_sec - start.tv_sec;
-  secs += (end.tv_usec - start.tv_usec) / 1000000.0;
+  secs = trace_get_time() - secs;
 
   stats.gc_time += secs;
   stats.gc_calls++;

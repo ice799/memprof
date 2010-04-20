@@ -23,16 +23,12 @@ static int (*orig_real_query)(void *mysql, const char *stmt_str, unsigned long l
 
 static int
 real_query_tramp(void *mysql, const char *stmt_str, unsigned long length) {
-  struct timeval start, end;
   double secs = 0;
   int ret;
 
-  gettimeofday (&start, NULL);
+  secs = trace_get_time();
   ret = orig_real_query(mysql, stmt_str, length);
-  gettimeofday (&end, NULL);
-
-  secs += end.tv_sec - start.tv_sec;
-  secs += (end.tv_usec - start.tv_usec) / 1000000.0;
+  secs = trace_get_time() - secs;
 
   stats.query_time += secs;
   stats.query_calls++;

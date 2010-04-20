@@ -33,18 +33,14 @@ static struct memprof_fd_stats stats;
 
 static ssize_t
 read_tramp(int fildes, void *buf, size_t nbyte) {
-  struct timeval start, end;
   double secs = 0;
   int err;
   ssize_t ret;
 
-  gettimeofday (&start, NULL);
+  secs = trace_get_time();
   ret = read(fildes, buf, nbyte);
   err = errno;
-  gettimeofday (&end, NULL);
-
-  secs += end.tv_sec - start.tv_sec;
-  secs += (end.tv_usec - start.tv_usec) / 1000000.0;
+  secs = trace_get_time() - secs;
 
   stats.read_time += secs;
   stats.read_calls++;
@@ -58,17 +54,13 @@ read_tramp(int fildes, void *buf, size_t nbyte) {
 
 static int
 connect_tramp(int socket, const struct sockaddr *address, socklen_t address_len) {
-  struct timeval start, end;
   double secs = 0;
   int err, ret;
 
-  gettimeofday (&start, NULL);
+  secs = trace_get_time();
   ret = connect(socket, address, address_len);
   err = errno;
-  gettimeofday (&end, NULL);
-
-  secs += end.tv_sec - start.tv_sec;
-  secs += (end.tv_usec - start.tv_usec) / 1000000.0;
+  secs = trace_get_time() - secs;
 
   stats.connect_time += secs;
   stats.connect_calls++;
