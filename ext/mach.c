@@ -1,7 +1,8 @@
 #if defined(HAVE_MACH)
 
-#include "bin_api.h"
 #include "arch.h"
+#include "bin_api.h"
+#include "mmap.h"
 #include "util.h"
 
 #include <assert.h>
@@ -37,7 +38,7 @@ struct mach_config {
   const struct mach_header* load_addr;
   uint32_t nindirectsyms;
   uint32_t indirectsymoff;
-  void *file;
+  struct mmap_info file;
   const char *filename;
   unsigned int index;
 };
@@ -344,39 +345,6 @@ find_dyld_image_index(const struct mach_header_64 *hdr) {
 }
 
 /*
- * Reads a file from the filesystem and returns a pointer to it's buffer
- *
- * !!! The pointer returned by this function must be freed !!!
- */
-
-static void *
-read_file(const char *filename) {
-  void *buf = NULL;
-  FILE *file = NULL;
-  struct stat filestat;
-
-  assert(filename);
-
-  file = fopen(filename, "r");
-  if (!file)
-    errx(EX_OSFILE, "Failed to open file %s", filename);
-
-  if (stat(filename, &filestat) != 0)
-    errx(EX_OSFILE, "Failed to stat(%s): %s", filename, strerror(errno));
-
-  buf = malloc(filestat.st_size);
-  if (!buf)
-    errx(EX_OSFILE, "Failed to malloc(): %s", strerror(errno));
-
-  if (fread(buf, filestat.st_size, 1, file) != 1)
-    errx(EX_OSFILE, "Failed to fread() file %s", filename);
-
-  fclose(file);
-
-  return buf;
-}
-
-/*
  * This function compares two nlist_64 structures by their n_value field (address, usually).
  * It is used by qsort in extract_symbol_table.
  */
@@ -557,9 +525,7 @@ free_mach_config(struct mach_config *cfg) {
   if (cfg == &ruby_img_cfg)
     return;
 
-  if (cfg->file)
-    free(cfg->file);
-  cfg->file = NULL;
+  munmap_file(&cfg->file);
   free(cfg);
 }
 
@@ -575,12 +541,13 @@ mach_config_for_index(unsigned int index) {
   struct mach_config *cfg = calloc(1, sizeof(struct mach_config));
 
   cfg->index = index;
-  cfg->filename = image->imageFilePath;
-  cfg->file = read_file(image->imageFilePath);
+  cfg->file.name = cfg->filename = image->imageFilePath;
+  if (mmap_file_open(&cfg->file) < 0)
+    errx(EX_OSFILE, "Failed to fread() file %s", cfg->filename);
   cfg->image_offset = _dyld_get_image_vmaddr_slide(index);
   cfg->load_addr = image->imageLoadAddress;
 
-  struct mach_header_64 *hdr = (struct mach_header_64*) cfg->file;
+  struct mach_header_64 *hdr = (struct mach_header_64*) cfg->file.data;
   assert(hdr);
 
   if (hdr->magic == FAT_CIGAM) {
@@ -591,7 +558,7 @@ mach_config_for_index(unsigned int index) {
       struct fat_arch *arch = (struct fat_arch *)((char*)fat + sizeof(struct fat_header) + sizeof(struct fat_arch) * j);
 
       if (OSSwapInt32(arch->cputype) == CPU_TYPE_X86_64) {
-        hdr = (struct mach_header_64 *)(cfg->file + OSSwapInt32(arch->offset));
+        hdr = (struct mach_header_64 *)(cfg->file.data + OSSwapInt32(arch->offset));
         break;
       }
     }
@@ -599,7 +566,7 @@ mach_config_for_index(unsigned int index) {
 
   if (hdr->magic != MH_MAGIC_64) {
     printf("Magic for Ruby Mach-O file doesn't match\n");
-    free(cfg->file);
+    munmap_file(&cfg->file);
     free(cfg);
     return NULL;
   }
@@ -708,7 +675,6 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig
       set_dyld_stub_target(entry, tramp->addr);
 
       ret = 0;
-      free_mach_config(cfg);
 
     } else if (trampee_addr) {
       if ((current_hdr = should_update_image(i)) == NULL)
@@ -720,7 +686,10 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig
           *orig_function = trampee_addr;
       }
     }
+
+    free_mach_config(cfg);
   }
+
   return ret;
 }
 
@@ -776,8 +745,10 @@ bin_init()
   if (!dladdr(ptr, &info) || !info.dli_fname)
     errx(EX_SOFTWARE, "Could not find the Mach object associated with rb_newobj.");
 
-  ruby_img_cfg.file = read_file(info.dli_fname);
-  struct mach_header_64 *hdr = (struct mach_header_64*) ruby_img_cfg.file;
+  ruby_img_cfg.file.name = ruby_img_cfg.filename = info.dli_fname;
+  if (mmap_file_open(&ruby_img_cfg.file) < 0)
+    errx(EX_OSFILE, "Failed to fread() file %s", ruby_img_cfg.filename);
+  struct mach_header_64 *hdr = (struct mach_header_64*) ruby_img_cfg.file.data;
   assert(hdr);
   ruby_img_cfg.hdr = (const struct mach_header *)hdr;
 
