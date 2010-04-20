@@ -249,7 +249,6 @@ static VALUE
 memprof_start(VALUE self)
 {
   if (!memprof_started) {
-
     insert_tramp("rb_newobj", newobj_tramp);
     insert_tramp("add_freelist", freelist_tramp);
     memprof_started = 1;
@@ -406,7 +405,7 @@ memprof_trace_request(VALUE self, VALUE env)
   struct timeval now;
   gettimeofday(&now, NULL);
 
-  yajl_gen_config conf = { .beautify = 0, .indentString = "  " };
+  yajl_gen_config conf = { .beautify = 1, .indentString = "  " };
   yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)stderr);
 
   yajl_gen_map_open(gen);
@@ -1277,13 +1276,6 @@ obj_dump(VALUE obj, yajl_gen gen)
   yajl_gen_map_close(gen);
 }
 
-static int
-objs_each_dump(st_data_t key, st_data_t record, st_data_t arg)
-{
-  obj_dump((VALUE)key, (yajl_gen)arg);
-  return ST_CONTINUE;
-}
-
 extern st_table *rb_global_tbl;
 
 static int
@@ -1480,13 +1472,25 @@ memprof_dump_finalizers(yajl_gen gen)
   }
 }
 
+static int
+objs_each_dump(st_data_t key, st_data_t record, st_data_t arg)
+{
+  obj_dump((VALUE)key, (yajl_gen)arg);
+  yajl_gen_reset((yajl_gen)arg);
+  return ST_CONTINUE;
+}
+
 static VALUE
 memprof_dump(int argc, VALUE *argv, VALUE self)
 {
-  VALUE str;
+  VALUE str, ret = Qnil;
+  int old = track_objs;
   FILE *out = NULL;
 
-  if (!track_objs)
+  if (rb_block_given_p()) {
+    memprof_start(self);
+    ret = rb_yield(Qnil);
+  } else if (!track_objs)
     rb_raise(rb_eRuntimeError, "object tracking disabled, call Memprof.start first");
 
   rb_scan_args(argc, argv, "01", &str);
@@ -1497,22 +1501,22 @@ memprof_dump(int argc, VALUE *argv, VALUE self)
       rb_raise(rb_eArgError, "unable to open output file");
   }
 
-  yajl_gen_config conf = { .beautify = 1, .indentString = "  " };
+  yajl_gen_config conf = { .beautify = 0, .indentString = "  " };
   yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)out);
 
   track_objs = 0;
 
-  yajl_gen_array_open(gen);
   st_foreach(objs, objs_each_dump, (st_data_t)gen);
-  yajl_gen_array_close(gen);
   yajl_gen_free(gen);
 
   if (out)
     fclose(out);
 
-  track_objs = 1;
+  if (rb_block_given_p())
+    memprof_stop(self);
+  track_objs = old;
 
-  return Qnil;
+  return ret;
 }
 
 static VALUE
