@@ -20,11 +20,15 @@ struct memprof_fd_stats {
   size_t read_requested_bytes;
   size_t read_actual_bytes;
 
+  size_t write_calls;
+  double write_time;
+  size_t write_requested_bytes;
+  size_t write_actual_bytes;
+
   size_t connect_calls;
   double connect_time;
 
   size_t readv_calls;
-  size_t write_calls;
   size_t writev_calls;
 };
 
@@ -47,6 +51,27 @@ read_tramp(int fildes, void *buf, size_t nbyte) {
   stats.read_requested_bytes += nbyte;
   if (ret > 0)
     stats.read_actual_bytes += ret;
+
+  errno = err;
+  return ret;
+}
+
+static ssize_t
+write_tramp(int fildes, const void *buf, size_t nbyte) {
+  double secs = 0;
+  int err;
+  ssize_t ret;
+
+  secs = trace_get_time();
+  ret = write(fildes, buf, nbyte);
+  err = errno;
+  secs = trace_get_time() - secs;
+
+  stats.write_time += secs;
+  stats.write_calls++;
+  stats.write_requested_bytes += nbyte;
+  if (ret > 0)
+    stats.write_actual_bytes += ret;
 
   errno = err;
   return ret;
@@ -76,6 +101,9 @@ fd_trace_start() {
   tmp.addr = read_tramp;
   bin_update_image("read", &tmp, NULL);
 
+  tmp.addr = write_tramp;
+  bin_update_image("write", &tmp, NULL);
+
   tmp.addr = connect_tramp;
   bin_update_image("connect", &tmp, NULL);
 }
@@ -86,6 +114,9 @@ fd_trace_stop() {
 
   tmp.addr = read;
   bin_update_image("read", &tmp, NULL);
+
+  tmp.addr = write;
+  bin_update_image("write", &tmp, NULL);
 
   tmp.addr = connect;
   bin_update_image("connect", &tmp, NULL);
@@ -112,6 +143,20 @@ fd_trace_dump(yajl_gen gen) {
     yajl_gen_map_close(gen);
   }
 
+  if (stats.write_calls > 0) {
+    yajl_gen_cstr(gen, "write");
+    yajl_gen_map_open(gen);
+    yajl_gen_cstr(gen, "calls");
+    yajl_gen_integer(gen, stats.write_calls);
+    yajl_gen_cstr(gen, "time");
+    yajl_gen_double(gen, stats.write_time);
+    yajl_gen_cstr(gen, "requested");
+    yajl_gen_integer(gen, stats.write_requested_bytes);
+    yajl_gen_cstr(gen, "actual");
+    yajl_gen_integer(gen, stats.write_actual_bytes);
+    yajl_gen_map_close(gen);
+  }
+
   if (stats.connect_calls > 0) {
     yajl_gen_cstr(gen, "connect");
     yajl_gen_map_open(gen);
@@ -121,15 +166,6 @@ fd_trace_dump(yajl_gen gen) {
     yajl_gen_double(gen, stats.connect_time);
     yajl_gen_map_close(gen);
   }
-
-  // fprintf(stderr, "================ FDs ======================================\n");
-  // fprintf(stderr, " # read calls: %zd\n", stats.read_calls);
-  // fprintf(stderr, " time in read: %fs\n", stats.read_time);
-  // fprintf(stderr, " bytes: %zd requested / %zd actual\n", stats.read_requested_bytes, stats.read_actual_bytes);
-  // fprintf(stderr, "===========================================================\n");
-  // fprintf(stderr, " # connect calls: %zd\n", stats.connect_calls);
-  // fprintf(stderr, " time in connect: %fs\n", stats.connect_time);
-  // fprintf(stderr, "===========================================================\n\n");
 }
 
 void install_fd_tracer()
