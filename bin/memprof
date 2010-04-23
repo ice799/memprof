@@ -33,6 +33,22 @@ class MemprofUploader
       opts.on("--put-my-data-on-the-internet",  "Confirm that you understand\n" +
                                                 "memprof.com will show all your            \n".rjust(80) +
                                                 "internal data on the internet    (required)".rjust(80)) {|arg| @confirmed = true}
+      opts.on("--info") do
+        require 'rbconfig'
+        puts RUBY_DESCRIPTION if defined? RUBY_DESCRIPTION
+        puts "CFLAGS='#{Config::CONFIG["CFLAGS"]}' ./configure #{Config::CONFIG["configure_args"]}"
+        bin = "#{Config::CONFIG['bindir']}/#{Config::CONFIG['ruby_install_name']}"
+        puts `file #{bin}`
+
+        if RUBY_PLATFORM =~ /darwin/
+          puts `otool -L #{bin}`
+        else
+          puts `ldd #{bin}`
+        end
+
+        puts
+        exit!
+      end
     end
 
     begin
