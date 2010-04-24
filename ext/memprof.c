@@ -452,6 +452,8 @@ memprof_trace_filename_set(int argc, VALUE *argv, VALUE self)
     tracing_json_gen = json_for_args(argc, argv);
     tracing_json_filename = *argv;
   }
+
+  return tracing_json_filename;
 }
 
 static VALUE
@@ -1554,7 +1556,7 @@ objs_each_dump(st_data_t key, st_data_t record, st_data_t arg)
 static VALUE
 memprof_dump(int argc, VALUE *argv, VALUE self)
 {
-  VALUE str, ret = Qnil;
+  VALUE ret = Qnil;
   int old = track_objs;
 
   if (rb_block_given_p()) {
