@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,6 +8,7 @@
 #include "bin_api.h"
 #include "json.h"
 #include "tracer.h"
+#include "tramp.h"
 #include "util.h"
 
 struct memprof_memory_stats {
