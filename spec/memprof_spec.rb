@@ -61,15 +61,23 @@ describe Memprof do
     1.23+1
     Memprof.dump(filename)
 
-    filedata.should =~ /"file": "#{__FILE__}"/
-    filedata.should =~ /"line": #{__LINE__-4}/
-    filedata.should =~ /"type": "float"/
-    filedata.should =~ /"data": 2\.23/
+    filedata.should =~ /"file":"#{__FILE__}"/
+    filedata.should =~ /"line":#{__LINE__-4}/
+    filedata.should =~ /"type":"float"/
+    filedata.should =~ /"data":2\.23/
   end
 
   should 'raise error when calling ::stats or ::dump without ::start' do
     lambda{ Memprof.stats }.should.raise(RuntimeError).message.should =~ /Memprof.start/
     lambda{ Memprof.dump }.should.raise(RuntimeError).message.should =~ /Memprof.start/
+  end
+
+  should 'dump objects created for block' do
+    Memprof.dump(filename) do
+      2.45+1
+    end
+
+    filedata.should =~ /"data":3\.45/
   end
 
   should 'dump out the entire heap' do
