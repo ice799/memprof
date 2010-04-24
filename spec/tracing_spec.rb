@@ -6,6 +6,12 @@ Bacon.summary_on_exit
 
 require 'tempfile'
 
+# XXX must require upfront before tracers are installed
+require 'socket'
+require 'open-uri'
+require 'mysql' rescue nil
+require 'memcached' rescue nil
+
 describe 'Memprof tracers' do
   @tempfile = Tempfile.new('tracing_spec')
 
@@ -18,7 +24,6 @@ describe 'Memprof tracers' do
   end
 
   should 'trace i/o for block of code' do
-    require 'open-uri'
     Memprof.trace(filename) do
       open("http://google.com").read
     end
@@ -51,6 +56,41 @@ describe 'Memprof tracers' do
 
     filedata.should =~ /"malloc":\{"calls":10/
     filedata.should =~ /"realloc":\{"calls":10/
+  end
+
+  if defined? Mysql
+    begin
+      conn = Mysql.connect
+
+      should 'trace mysql calls for block' do
+        Memprof.trace(filename) do
+          5.times{ conn.query("select sleep(0.05)") }
+        end
+
+        filedata.should =~ /"mysql":\{"queries":5,"time":0.2[567]/
+      end
+    rescue Mysql::Error => e
+      raise unless e.message =~ /connect/
+    end
+  end
+
+  if defined? Memcached
+    begin
+      conn = Memcached.new("localhost:11211", :show_backtraces => true)
+      conn.stats
+
+      should 'trace memcached calls for block' do
+        Memprof.trace(filename) do
+          conn.delete("memprof") rescue nil
+          conn.get("memprof") rescue nil
+          conn.set("memprof", "is cool")
+          conn.get("memprof")
+        end
+
+        filedata.should =~ /"memcache":\{"get":\{"calls":2,"responses":\{"success":1,"notfound":1/
+      end
+    rescue Memcached::SomeErrorsWereReported
+    end
   end
 end
 
