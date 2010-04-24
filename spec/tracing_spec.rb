@@ -88,6 +88,7 @@ describe 'Memprof tracers' do
         end
 
         filedata.should =~ /"memcache":\{"get":\{"calls":2,"responses":\{"success":1,"notfound":1/
+        filedata.should =~ /"set":\{"calls":1,"responses":\{"success":1/
       end
     rescue Memcached::SomeErrorsWereReported
     end

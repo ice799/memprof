@@ -15,12 +15,16 @@
 struct memprof_memcache_stats {
   size_t get_calls;
   size_t get_responses[45];
+
+  size_t set_calls;
+  size_t set_responses[45];
 };
 
 static struct tracer tracer;
 static struct memprof_memcache_stats stats;
 static const char* (*_memcached_lib_version)(void);
 static char* (*_memcached_get)(void *ptr, const char *key, size_t key_length, size_t *value_length, uint32_t *flags, void *error);
+static int (*_memcached_set)(void *ptr, const char *key, size_t key_length, const char *value, size_t value_length, time_t expiration, uint32_t flags);
 
 static char*
 memcached_get_tramp(void *ptr, const char *key, size_t key_length, size_t *value_length, uint32_t *flags, void *error)
@@ -29,6 +33,15 @@ memcached_get_tramp(void *ptr, const char *key, size_t key_length, size_t *value
   stats.get_calls++;
   int err = *(int*)error;
   stats.get_responses[err > 42 ? 44 : err]++;
+  return ret;
+}
+
+static int
+memcached_set_tramp(void *ptr, const char *key, size_t key_length, const char *value, size_t value_length, time_t expiration, uint32_t flags)
+{
+  int ret = _memcached_set(ptr, key, key_length, value, value_length, expiration, flags);
+  stats.set_calls++;
+  stats.set_responses[ret > 42 ? 44 : ret]++;
   return ret;
 }
 
@@ -47,6 +60,9 @@ memcache_trace_start() {
     if (strcmp(version, "0.32") == 0) {
       _memcached_get = bin_find_symbol("memcached_get", NULL, 1);
       insert_tramp("memcached_get", memcached_get_tramp);
+
+      _memcached_set = bin_find_symbol("memcached_set", NULL, 1);
+      insert_tramp("memcached_set", memcached_set_tramp);
     }
   }
 }
@@ -61,35 +77,49 @@ memcache_trace_reset() {
 }
 
 static void
-memcache_trace_dump(yajl_gen gen) {
+memcache_trace_dump_results(yajl_gen gen, size_t responses[])
+{
   int i;
+  yajl_gen_cstr(gen, "responses");
+  yajl_gen_map_open(gen);
+  for (i=0; i < 45; i++) {
+    if (responses[i]) {
+      switch (i) {
+        case 0:
+          yajl_gen_cstr(gen, "success");
+          break;
+        case 16:
+          yajl_gen_cstr(gen, "notfound");
+          break;
+        case 44:
+          yajl_gen_cstr(gen, "unknown");
+          break;
+        default:
+          yajl_gen_format(gen, "%d", i);
+      }
+      yajl_gen_integer(gen, responses[i]);
+    }
+  }
+  yajl_gen_map_close(gen);
+}
 
+static void
+memcache_trace_dump(yajl_gen gen) {
   if (stats.get_calls > 0) {
     yajl_gen_cstr(gen, "get");
-
     yajl_gen_map_open(gen);
     yajl_gen_cstr(gen, "calls");
     yajl_gen_integer(gen, stats.get_calls);
-
-    yajl_gen_cstr(gen, "responses");
-    yajl_gen_map_open(gen);
-    for (i=0; i < 45; i++) {
-      if (stats.get_responses[i]) {
-        switch (i) {
-          case 0:
-            yajl_gen_cstr(gen, "success");
-            break;
-          case 16:
-            yajl_gen_cstr(gen, "notfound");
-            break;
-          default:
-            yajl_gen_format(gen, "%d", i);
-        }
-        yajl_gen_integer(gen, stats.get_responses[i]);
-      }
-    }
+    memcache_trace_dump_results(gen, stats.get_responses);
     yajl_gen_map_close(gen);
+  }
 
+  if (stats.set_calls > 0) {
+    yajl_gen_cstr(gen, "set");
+    yajl_gen_map_open(gen);
+    yajl_gen_cstr(gen, "calls");
+    yajl_gen_integer(gen, stats.set_calls);
+    memcache_trace_dump_results(gen, stats.set_responses);
     yajl_gen_map_close(gen);
   }
 }
