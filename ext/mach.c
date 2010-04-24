@@ -112,7 +112,7 @@ find_stub_addr(const char *symname, struct mach_config *img_cfg)
 
   for (; i < nsyms; i ++) {
     uint32_t currsym = sect->reserved1 + i;
-    uint64_t stubaddr = sect->addr + (i * sect->reserved2);
+    uint64_t stubaddr = sect->offset + (i * sect->reserved2);
     uint32_t symoff = 0;
 
     assert(currsym <= img_cfg->nindirectsyms);
@@ -129,9 +129,9 @@ find_stub_addr(const char *symname, struct mach_config *img_cfg)
 
     if (strcmp(symname, string+1) == 0) {
       if (stubaddr) {
-        if (img_cfg->index != 0) // don't add load_addr for main exe
-          stubaddr = (uint64_t)img_cfg->load_addr + stubaddr;
-        dbg_printf("address of stub in %s for %s is %" PRId64 "\n", img_cfg->filename, string, stubaddr);
+        dbg_printf("address of stub in %s for %s is %" PRId64 " + %" PRId64 " = ", img_cfg->filename, string, stubaddr, img_cfg->load_addr);
+        stubaddr = (uint64_t)img_cfg->load_addr + stubaddr;
+        dbg_printf("%" PRId64 "\n", stubaddr);
         return (void *)stubaddr;
       }
     }
@@ -239,6 +239,7 @@ should_update_image(int index) {
     if (strcmp(possible_libruby, "libruby.dylib") == 0)
       return hdr;
   }
+
   return NULL;
 }
 

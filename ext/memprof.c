@@ -360,22 +360,63 @@ memprof_track(int argc, VALUE *argv, VALUE self)
   return Qnil;
 }
 
+static yajl_gen_config fancy_conf = { .beautify = 1, .indentString = "  " };
+static yajl_gen_config basic_conf = { .beautify = 0, .indentString = "  " };
+
+static yajl_gen
+json_for_args(int argc, VALUE *argv)
+{
+  FILE *out = NULL;
+  VALUE str;
+  rb_scan_args(argc, argv, "01", &str);
+
+  if (RTEST(str)) {
+    out = fopen(StringValueCStr(str), "w");
+    if (!out)
+      rb_raise(rb_eArgError, "unable to open output file");
+  }
+
+  if (!out)
+    out = stderr;
+
+  yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, out == stderr ? &fancy_conf : &basic_conf, NULL, (void*)out);
+
+  return gen;
+}
+
+static void
+json_free(yajl_gen gen)
+{
+  FILE *out = (FILE*)gen->ctx;
+  if (out != stderr)
+    fclose(out);
+  yajl_gen_free(gen);
+}
+
 static VALUE
-memprof_trace(VALUE self)
+memprof_trace(int argc, VALUE *argv, VALUE self)
 {
   if (!rb_block_given_p())
     rb_raise(rb_eArgError, "block required");
 
-  trace_set_output(NULL);
-  yajl_gen gen = trace_get_output();
+  yajl_gen gen = json_for_args(argc, argv);
 
+  trace_set_output(gen);
   yajl_gen_map_open(gen);
+
   trace_invoke_all(TRACE_RESET);
   trace_invoke_all(TRACE_START);
+
   VALUE ret = rb_yield(Qnil);
+
   trace_invoke_all(TRACE_DUMP);
   trace_invoke_all(TRACE_STOP);
+
   yajl_gen_map_close(gen);
+  yajl_gen_reset(gen);
+
+  json_free(gen);
+  trace_set_output(NULL);
 
   return ret;
 }
@@ -396,6 +437,29 @@ each_request_entry(st_data_t key, st_data_t record, st_data_t arg)
   return ST_CONTINUE;
 }
 
+static VALUE tracing_json_filename = Qnil;
+static yajl_gen tracing_json_gen = NULL;
+
+static VALUE
+memprof_trace_filename_set(int argc, VALUE *argv, VALUE self)
+{
+  if (tracing_json_gen)
+    json_free(tracing_json_gen);
+
+  if (!RTEST(*argv)) {
+    tracing_json_filename = Qnil;
+  } else {
+    tracing_json_gen = json_for_args(argc, argv);
+    tracing_json_filename = *argv;
+  }
+}
+
+static VALUE
+memprof_trace_filename_get(VALUE self)
+{
+  return tracing_json_filename;
+}
+
 static VALUE
 memprof_trace_request(VALUE self, VALUE env)
 {
@@ -405,8 +469,11 @@ memprof_trace_request(VALUE self, VALUE env)
   struct timeval now;
   gettimeofday(&now, NULL);
 
-  yajl_gen_config conf = { .beautify = 1, .indentString = "  " };
-  yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)stderr);
+  yajl_gen gen;
+  if (tracing_json_gen)
+    gen = tracing_json_gen;
+  else
+    gen = json_for_args(0, NULL);
 
   yajl_gen_map_open(gen);
 
@@ -434,7 +501,11 @@ memprof_trace_request(VALUE self, VALUE env)
 
   yajl_gen_map_close(gen);
   yajl_gen_map_close(gen);
-  yajl_gen_free(gen);
+
+  if (gen != tracing_json_gen)
+    json_free(gen);
+  else
+    yajl_gen_reset(gen);
 
   return ret;
 }
@@ -1485,7 +1556,6 @@ memprof_dump(int argc, VALUE *argv, VALUE self)
 {
   VALUE str, ret = Qnil;
   int old = track_objs;
-  FILE *out = NULL;
 
   if (rb_block_given_p()) {
     memprof_start(self);
@@ -1493,24 +1563,11 @@ memprof_dump(int argc, VALUE *argv, VALUE self)
   } else if (!track_objs)
     rb_raise(rb_eRuntimeError, "object tracking disabled, call Memprof.start first");
 
-  rb_scan_args(argc, argv, "01", &str);
-
-  if (RTEST(str)) {
-    out = fopen(StringValueCStr(str), "w");
-    if (!out)
-      rb_raise(rb_eArgError, "unable to open output file");
-  }
-
-  yajl_gen_config conf = { .beautify = 0, .indentString = "  " };
-  yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)out);
-
   track_objs = 0;
 
+  yajl_gen gen = json_for_args(argc, argv);
   st_foreach(objs, objs_each_dump, (st_data_t)gen);
-  yajl_gen_free(gen);
-
-  if (out)
-    fclose(out);
+  json_free(gen);
 
   if (rb_block_given_p())
     memprof_stop(self);
@@ -1828,8 +1885,10 @@ Init_memprof()
   rb_define_singleton_method(memprof, "track", memprof_track, -1);
   rb_define_singleton_method(memprof, "dump", memprof_dump, -1);
   rb_define_singleton_method(memprof, "dump_all", memprof_dump_all, -1);
-  rb_define_singleton_method(memprof, "trace", memprof_trace, 0);
+  rb_define_singleton_method(memprof, "trace", memprof_trace, -1);
   rb_define_singleton_method(memprof, "trace_request", memprof_trace_request, 1);
+  rb_define_singleton_method(memprof, "trace_filename", memprof_trace_filename_get, 0);
+  rb_define_singleton_method(memprof, "trace_filename=", memprof_trace_filename_set, -1);
 
   objs = st_init_numtable();
   init_memprof_config_base();
@@ -1842,6 +1901,7 @@ Init_memprof()
   install_objects_tracer();
   install_fd_tracer();
   install_mysql_tracer();
+  install_memcache_tracer();
 
   gc_hook = Data_Wrap_Struct(rb_cObject, sourcefile_marker, NULL, NULL);
   rb_global_variable(&gc_hook);

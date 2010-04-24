@@ -8,8 +8,6 @@
 #include "tracer.h"
 #include "util.h"
 
-static yajl_gen_config json_conf = { .beautify = 0, .indentString = "  " };
-static yajl_gen default_json = NULL;
 static yajl_gen json_gen = NULL;
 
 /*
@@ -107,28 +105,10 @@ trace_invoke(const char *id, trace_fn fn)
   return 0;
 }
 
-static void
-json_print(void *ctx, const char * str, unsigned int len)
-{
-  FILE *out = (FILE *)ctx;
-  size_t written = 0;
-  while(1) {
-    written += fwrite(str + written, sizeof(char), len - written, out ? out : stdout);
-    if (written == len) break;
-  }
-}
-
 void
 trace_set_output(yajl_gen gen)
 {
-  if (gen) {
-    json_gen = gen;
-  } else {
-    if (!default_json)
-      default_json = yajl_gen_alloc2((yajl_print_t)&json_print, &json_conf, NULL, (void*)stderr);
-
-    json_gen = default_json;
-  }
+  json_gen = gen;
 }
 
 yajl_gen

@@ -1,6 +1,8 @@
 #include "json.h"
 #include <assert.h>
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 void
 yajl_gen_reset(yajl_gen gen)
