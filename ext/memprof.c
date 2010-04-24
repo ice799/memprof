@@ -468,8 +468,8 @@ memprof_trace_request(VALUE self, VALUE env)
   if (!rb_block_given_p())
     rb_raise(rb_eArgError, "block required");
 
+  double secs;
   struct timeval now;
-  gettimeofday(&now, NULL);
 
   yajl_gen gen;
   if (tracing_json_gen)
@@ -479,7 +479,8 @@ memprof_trace_request(VALUE self, VALUE env)
 
   yajl_gen_map_open(gen);
 
-  yajl_gen_cstr(gen, "time");
+  yajl_gen_cstr(gen, "start");
+  gettimeofday(&now, NULL);
   yajl_gen_integer(gen, (now.tv_sec * 1000000) + now.tv_usec);
 
   if (RTEST(env) && BUILTIN_TYPE(env) == T_HASH) {
@@ -497,11 +498,19 @@ memprof_trace_request(VALUE self, VALUE env)
   trace_set_output(gen);
   trace_invoke_all(TRACE_RESET);
   trace_invoke_all(TRACE_START);
+
+  secs = trace_get_time();
   VALUE ret = rb_yield(Qnil);
+  secs = trace_get_time() - secs;
+
   trace_invoke_all(TRACE_DUMP);
   trace_invoke_all(TRACE_STOP);
 
   yajl_gen_map_close(gen);
+
+  yajl_gen_cstr(gen, "time");
+  yajl_gen_double(gen, secs);
+
   yajl_gen_map_close(gen);
 
   if (gen != tracing_json_gen)
