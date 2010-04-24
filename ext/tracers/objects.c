@@ -43,20 +43,21 @@ objects_tramp() {
 static void
 objects_trace_start() {
   static int inserted = 0;
-  if (!inserted) {
+
+  if (!inserted)
     inserted = 1;
+  else
+    return;
 
-    orig_rb_newobj = bin_find_symbol("rb_newobj", NULL, 0);
-    assert(orig_rb_newobj != NULL);
-    dbg_printf("orig_rb_newobj: %p\n", orig_rb_newobj);
+  orig_rb_newobj = bin_find_symbol("rb_newobj", NULL, 0);
+  assert(orig_rb_newobj != NULL);
+  dbg_printf("orig_rb_newobj: %p\n", orig_rb_newobj);
 
-    insert_tramp("rb_newobj", objects_tramp);
-  }
+  insert_tramp("rb_newobj", objects_tramp);
 }
 
 static void
 objects_trace_stop() {
-  // TODO: figure out how to undo the tramp
 }
 
 static void

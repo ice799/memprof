@@ -123,7 +123,7 @@ hook_freelist(int entry, void *tramp)
 void
 insert_tramp(const char *trampee, void *tramp)
 {
-  void *trampee_addr = bin_find_symbol(trampee, NULL, 0);
+  void *trampee_addr = bin_find_symbol(trampee, NULL, 1);
   int inline_ent = inline_tramp_size;
 
   if (trampee_addr == NULL) {

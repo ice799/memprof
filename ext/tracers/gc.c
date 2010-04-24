@@ -36,20 +36,21 @@ gc_tramp()
 static void
 gc_trace_start() {
   static int inserted = 0;
-  if (!inserted) {
+
+  if (!inserted)
     inserted = 1;
+  else
+    return;
 
-    orig_garbage_collect = bin_find_symbol("garbage_collect", NULL, 0);
-    assert(orig_garbage_collect != NULL);
-    dbg_printf("orig_garbage_collect: %p\n", orig_garbage_collect);
+  orig_garbage_collect = bin_find_symbol("garbage_collect", NULL, 0);
+  assert(orig_garbage_collect != NULL);
+  dbg_printf("orig_garbage_collect: %p\n", orig_garbage_collect);
 
-    insert_tramp("garbage_collect", gc_tramp);
-  }
+  insert_tramp("garbage_collect", gc_tramp);
 }
 
 static void
 gc_trace_stop() {
-  // TODO: figure out how to undo the tramp
 }
 
 static void

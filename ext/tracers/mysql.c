@@ -38,21 +38,20 @@ real_query_tramp(void *mysql, const char *stmt_str, unsigned long length) {
 
 static void
 mysql_trace_start() {
+  static int inserted = 0;
+
+  if (!inserted)
+    inserted = 1;
+  else
+    return;
+
   orig_real_query = bin_find_symbol("mysql_real_query", NULL, 1);
-  if (orig_real_query) {
-    struct tramp_st2_entry tmp;
-    tmp.addr = real_query_tramp;
-    bin_update_image("mysql_real_query", &tmp, NULL);
-  }
+  if (orig_real_query)
+    insert_tramp("mysql_real_query", real_query_tramp);
 }
 
 static void
 mysql_trace_stop() {
-  if (orig_real_query) {
-    struct tramp_st2_entry tmp;
-    tmp.addr = orig_real_query;
-    bin_update_image("mysql_real_query", &tmp, NULL);
-  }
 }
 
 static void

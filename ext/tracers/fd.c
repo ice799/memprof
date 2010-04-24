@@ -96,30 +96,20 @@ connect_tramp(int socket, const struct sockaddr *address, socklen_t address_len)
 
 static void
 fd_trace_start() {
-  struct tramp_st2_entry tmp;
+  static int inserted = 0;
 
-  tmp.addr = read_tramp;
-  bin_update_image("read", &tmp, NULL);
+  if (!inserted)
+    inserted = 1;
+  else
+    return;
 
-  tmp.addr = write_tramp;
-  bin_update_image("write", &tmp, NULL);
-
-  tmp.addr = connect_tramp;
-  bin_update_image("connect", &tmp, NULL);
+  insert_tramp("read", read_tramp);
+  insert_tramp("write", write_tramp);
+  insert_tramp("connect", connect_tramp);
 }
 
 static void
 fd_trace_stop() {
-  struct tramp_st2_entry tmp;
-
-  tmp.addr = read;
-  bin_update_image("read", &tmp, NULL);
-
-  tmp.addr = write;
-  bin_update_image("write", &tmp, NULL);
-
-  tmp.addr = connect;
-  bin_update_image("connect", &tmp, NULL);
 }
 
 static void

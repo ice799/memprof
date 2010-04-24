@@ -27,8 +27,6 @@ struct memprof_memory_stats {
 
 static struct tracer tracer;
 static struct memprof_memory_stats stats;
-static void *(*orig_malloc)(size_t), *(*orig_realloc)(void *, size_t),
-            *(*orig_calloc)(size_t, size_t), (*orig_free)(void *);
 static size_t (*malloc_usable_size)(void *ptr);
 
 static void *
@@ -37,7 +35,7 @@ malloc_tramp(size_t size)
   void *ret = NULL;
   stats.malloc_bytes_requested += size;
   stats.malloc_calls++;
-  ret = orig_malloc(size);
+  ret = malloc(size);
   stats.malloc_bytes_actual += malloc_usable_size(ret);
   return ret;
 }
@@ -48,7 +46,7 @@ calloc_tramp(size_t nmemb, size_t size)
   void *ret = NULL;
   stats.calloc_bytes_requested += (nmemb * size);
   stats.calloc_calls++;
-  ret = (*orig_calloc)(nmemb, size);
+  ret = calloc(nmemb, size);
   stats.calloc_bytes_actual += malloc_usable_size(ret);
   return ret;
 }
@@ -60,7 +58,7 @@ realloc_tramp(void *ptr, size_t size)
   void *ret = NULL;
   stats.realloc_bytes_requested += size;
   stats.realloc_calls++;
-  ret = orig_realloc(ptr, size);
+  ret = realloc(ptr, size);
   stats.realloc_bytes_actual += malloc_usable_size(ptr);
   return ret;
 }
@@ -70,13 +68,18 @@ free_tramp(void *ptr)
 {
   stats.free_bytes_actual += malloc_usable_size(ptr);
   stats.free_calls++;
-  orig_free(ptr);
+  free(ptr);
 }
 
 static void
 malloc_trace_start()
 {
-  struct tramp_st2_entry tmp;
+  static int inserted = 0;
+
+  if (!inserted)
+    inserted = 1;
+  else
+    return;
 
   if (!malloc_usable_size) {
     malloc_usable_size = bin_find_symbol("MallocExtension_GetAllocatedSize", NULL, 1);
@@ -92,41 +95,15 @@ malloc_trace_start()
     dbg_printf("malloc_usable_size: %p\n", malloc_usable_size);
   }
 
-  tmp.addr = malloc_tramp;
-  bin_update_image("malloc", &tmp, (void **)(&orig_malloc));
-  assert(orig_malloc != NULL);
-  dbg_printf("orig_malloc: %p\n", orig_malloc);
-
-  tmp.addr = realloc_tramp;
-  bin_update_image("realloc", &tmp,(void **)(&orig_realloc));
-  dbg_printf("orig_realloc: %p\n", orig_realloc);
-
-  tmp.addr = calloc_tramp;
-  bin_update_image("calloc", &tmp, (void **)(&orig_calloc));
-  dbg_printf("orig_calloc: %p\n", orig_calloc);
-
-  tmp.addr = free_tramp;
-  bin_update_image("free", &tmp, (void **)(&orig_free));
-  assert(orig_free != NULL);
-  dbg_printf("orig_free: %p\n", orig_free);
+  insert_tramp("malloc", malloc_tramp);
+  insert_tramp("realloc", realloc_tramp);
+  insert_tramp("calloc", calloc_tramp);
+  insert_tramp("free", free_tramp);
 }
 
 static void
 malloc_trace_stop()
 {
-  struct tramp_st2_entry tmp;
-
-  tmp.addr = orig_malloc;
-  bin_update_image("malloc", &tmp, NULL);
-
-  tmp.addr = orig_realloc;
-  bin_update_image("realloc", &tmp, NULL);
-
-  tmp.addr = orig_calloc;
-  bin_update_image("calloc", &tmp, NULL);
-
-  tmp.addr = orig_free;
-  bin_update_image("free", &tmp, NULL);
 }
 
 static void
