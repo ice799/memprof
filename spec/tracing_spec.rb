@@ -9,8 +9,8 @@ require 'tempfile'
 # XXX must require upfront before tracers are installed
 require 'socket'
 require 'open-uri'
-require 'mysql' rescue nil
-require 'memcached' rescue nil
+begin; require 'mysql';     rescue LoadError; end
+begin; require 'memcached'; rescue LoadError; end
 
 describe 'Memprof tracers' do
   @tempfile = Tempfile.new('tracing_spec')
@@ -38,7 +38,9 @@ describe 'Memprof tracers' do
       select(nil, nil, nil, 0.15)
     end
 
-    filedata.should =~ /"select":\{"calls":1,"time":0\.15/
+    filedata.should =~ /"select":\{"calls":1,"time":0\.1[567]/
+    time = filedata[/"select":\{"calls":\d+,"time":([\d.]+)/, 1].to_f
+    time.should.be.close(0.15, 0.1)
   end
 
   should 'trace objects created for block' do
@@ -68,14 +70,16 @@ describe 'Memprof tracers' do
 
   if defined? Mysql
     begin
-      conn = Mysql.connect
+      conn = Mysql.connect('localhost', 'root')
 
       should 'trace mysql calls for block' do
         Memprof.trace(filename) do
           5.times{ conn.query("select sleep(0.05)") }
         end
 
-        filedata.should =~ /"mysql":\{"queries":5,"time":0.2[567]/
+        filedata.should =~ /"mysql":\{"queries":5,"time":([\d.]+)/
+        time = filedata[/"mysql":\{"queries":5,"time":([\d.]+)/, 1].to_f
+        time.should.be.close(0.25, 0.1)
       end
     rescue Mysql::Error => e
       raise unless e.message =~ /connect/
