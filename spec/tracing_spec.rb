@@ -23,7 +23,7 @@ describe 'Memprof tracers' do
     File.read(filename)
   end
 
-  should 'trace i/o for block of code' do
+  should 'trace i/o for block' do
     Memprof.trace(filename) do
       open("http://google.com").read
     end
@@ -33,7 +33,15 @@ describe 'Memprof tracers' do
     filedata.should =~ /"connect":\{"calls":\d+/
   end
 
-  should 'trace objects created for block of code' do
+  should 'trace select for block' do
+    Memprof.trace(filename) do
+      select(nil, nil, nil, 0.15)
+    end
+
+    filedata.should =~ /"select":\{"calls":1,"time":0\.15/
+  end
+
+  should 'trace objects created for block' do
     Memprof.trace(filename) do
       10.times{1.1+1.2}
     end
@@ -41,7 +49,7 @@ describe 'Memprof tracers' do
     filedata.should =~ /"float":10/
   end
 
-  should 'trace gc runs for block of code' do
+  should 'trace gc runs for block' do
     Memprof.trace(filename) do
       10.times{GC.start}
     end
@@ -49,7 +57,7 @@ describe 'Memprof tracers' do
     filedata.should =~ /"gc":\{"calls":10,"time":[\d.]+/
   end
 
-  should 'trace memory allocation for block of code' do
+  should 'trace memory allocation for block' do
     Memprof.trace(filename) do
       10.times{ "abc" << "def" }
     end

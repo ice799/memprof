@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -28,8 +29,8 @@ struct memprof_fd_stats {
   size_t connect_calls;
   double connect_time;
 
-  size_t readv_calls;
-  size_t writev_calls;
+  size_t select_calls;
+  double select_time;
 };
 
 static struct tracer tracer;
@@ -94,6 +95,24 @@ connect_tramp(int socket, const struct sockaddr *address, socklen_t address_len)
   return ret;
 }
 
+static int
+select_tramp(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds, struct timeval *timeout)
+{
+  double secs = 0;
+  int ret, err;
+
+  secs = trace_get_time();
+  ret = select(nfds, readfds, writefds, errorfds, timeout);
+  err = errno;
+  secs = trace_get_time() - secs;
+
+  stats.select_time += secs;
+  stats.select_calls++;
+
+  errno = err;
+  return ret;
+}
+
 static void
 fd_trace_start() {
   static int inserted = 0;
@@ -106,6 +125,11 @@ fd_trace_start() {
   insert_tramp("read", read_tramp);
   insert_tramp("write", write_tramp);
   insert_tramp("connect", connect_tramp);
+  #ifdef HAVE_MACH
+  insert_tramp("select$DARWIN_EXTSN", select_tramp);
+  #else
+  insert_tramp("select", select_tramp);
+  #endif
 }
 
 static void
@@ -154,6 +178,16 @@ fd_trace_dump(yajl_gen gen) {
     yajl_gen_integer(gen, stats.connect_calls);
     yajl_gen_cstr(gen, "time");
     yajl_gen_double(gen, stats.connect_time);
+    yajl_gen_map_close(gen);
+  }
+
+  if (stats.select_calls > 0) {
+    yajl_gen_cstr(gen, "select");
+    yajl_gen_map_open(gen);
+    yajl_gen_cstr(gen, "calls");
+    yajl_gen_integer(gen, stats.select_calls);
+    yajl_gen_cstr(gen, "time");
+    yajl_gen_double(gen, stats.select_time);
     yajl_gen_map_close(gen);
   }
 }

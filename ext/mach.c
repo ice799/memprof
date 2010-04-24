@@ -239,6 +239,7 @@ should_update_image(int index) {
     if (strcmp(possible_libruby, "libruby.dylib") == 0)
       return hdr;
   }
+
   return NULL;
 }
 
