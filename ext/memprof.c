@@ -508,6 +508,30 @@ memprof_trace_request(VALUE self, VALUE env)
 
   yajl_gen_map_close(gen);
 
+  if (RTEST(env) && BUILTIN_TYPE(env) == T_HASH) {
+    VALUE val, str;
+    val = rb_hash_aref(env, rb_str_new2("action_controller.request.path_parameters"));
+    if (!RTEST(val))
+      val = rb_hash_aref(env, rb_str_new2("action_dispatch.request.parameters"));
+
+    if (RTEST(val) && BUILTIN_TYPE(val) == T_HASH) {
+      yajl_gen_cstr(gen, "rails");
+      yajl_gen_map_open(gen);
+      str = rb_hash_aref(val, rb_str_new2("controller"));
+      if (RTEST(str) && BUILTIN_TYPE(str) == T_STRING) {
+        yajl_gen_cstr(gen, "controller");
+        yajl_gen_cstr(gen, RSTRING_PTR(str));
+      }
+
+      str = rb_hash_aref(val, rb_str_new2("action"));
+      if (RTEST(str) && BUILTIN_TYPE(str) == T_STRING) {
+        yajl_gen_cstr(gen, "action");
+        yajl_gen_cstr(gen, RSTRING_PTR(str));
+      }
+      yajl_gen_map_close(gen);
+    }
+  }
+
   yajl_gen_cstr(gen, "time");
   yajl_gen_double(gen, secs);
 
