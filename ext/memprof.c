@@ -483,15 +483,6 @@ memprof_trace_request(VALUE self, VALUE env)
   gettimeofday(&now, NULL);
   yajl_gen_integer(gen, (now.tv_sec * 1000000) + now.tv_usec);
 
-  if (RTEST(env) && BUILTIN_TYPE(env) == T_HASH) {
-    yajl_gen_cstr(gen, "request");
-
-    struct RHash *hash = RHASH(env);
-    yajl_gen_map_open(gen);
-    st_foreach(hash->tbl, each_request_entry, (st_data_t)gen);
-    yajl_gen_map_close(gen);
-  }
-
   yajl_gen_cstr(gen, "tracers");
   yajl_gen_map_open(gen);
 
@@ -530,6 +521,28 @@ memprof_trace_request(VALUE self, VALUE env)
       }
       yajl_gen_map_close(gen);
     }
+
+    yajl_gen_cstr(gen, "request");
+    yajl_gen_map_open(gen);
+    // struct RHash *hash = RHASH(env);
+    // st_foreach(hash->tbl, each_request_entry, (st_data_t)gen);
+
+    #define DUMP_HASH_ENTRY(key) do {                    \
+      str = rb_hash_aref(env, rb_str_new2(key));         \
+      if (RTEST(str) && BUILTIN_TYPE(str) == T_STRING) { \
+        yajl_gen_cstr(gen, key);                         \
+        yajl_gen_cstr(gen, RSTRING_PTR(str));            \
+      }                                                  \
+    } while(0)
+    // DUMP_HASH_ENTRY("HTTP_USER_AGENT");
+    DUMP_HASH_ENTRY("REQUEST_PATH");
+    DUMP_HASH_ENTRY("PATH_INFO");
+    DUMP_HASH_ENTRY("REMOTE_ADDR");
+    DUMP_HASH_ENTRY("REQUEST_URI");
+    DUMP_HASH_ENTRY("REQUEST_METHOD");
+    DUMP_HASH_ENTRY("QUERY_STRING");
+
+    yajl_gen_map_close(gen);
   }
 
   yajl_gen_cstr(gen, "time");
