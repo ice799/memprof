@@ -130,9 +130,9 @@ find_stub_addr(const char *symname, struct mach_config *img_cfg)
 
     if (strcmp(symname, string+1) == 0) {
       if (stubaddr) {
-        dbg_printf("address of stub in %s for %s is %" PRId64 " + %" PRId64 " = ", img_cfg->filename, string, stubaddr, img_cfg->load_addr);
+        dbg_printf("address of stub in %s for %s is %" PRIx64 " + %" PRIx64 " = ", img_cfg->filename, string, stubaddr, img_cfg->load_addr);
         stubaddr = (uint64_t)img_cfg->load_addr + stubaddr;
-        dbg_printf("%" PRId64 "\n", stubaddr);
+        dbg_printf("%" PRIdx4 "\n", stubaddr);
         return (void *)stubaddr;
       }
     }
