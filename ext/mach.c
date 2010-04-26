@@ -701,21 +701,37 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig
 }
 
 void *
-bin_allocate_page()
+do_bin_allocate_page(struct mach_config *cfg)
 {
   void *ret = NULL;
+  void *addr = (void *)cfg->load_addr;
   size_t i = 0;
 
-  for (i = memprof_config.pagesize; i < INT_MAX - memprof_config.pagesize; i += memprof_config.pagesize) {
-    ret = mmap((void*)(NULL + i), memprof_config.pagesize, PROT_WRITE|PROT_READ|PROT_EXEC,
+  dbg_printf("ruby loaded at: %p\n", addr);
+
+  /*
+   * XXX no clue how large the text segment is, so guess.
+   * TODO remove this.
+   */
+  addr += 65535;
+
+  for (; i < INT_MAX - memprof_config.pagesize; i += memprof_config.pagesize, addr += memprof_config.pagesize) {
+    ret = mmap(addr, memprof_config.pagesize, PROT_WRITE|PROT_READ|PROT_EXEC,
                MAP_ANON|MAP_PRIVATE, -1, 0);
 
     if (ret != MAP_FAILED) {
+      dbg_printf("found a page at: %p\n", ret);
       memset(ret, 0x90, memprof_config.pagesize);
       return ret;
     }
   }
   return NULL;
+}
+
+void *
+bin_allocate_page()
+{
+  return do_bin_allocate_page(&ruby_img_cfg);
 }
 
 size_t
