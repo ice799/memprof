@@ -75,17 +75,4 @@ copy_instructions(void *dest, void *src, size_t count)
    */
   return;
 }
-
-/*
- * WRITE_INSTRUCTIONS - page align start, recalculate len to take into account
- * alignment, set the read/write permissions and execute the code stmt.
- */
-#define WRITE_INSTRUCTIONS(start, len, stmt) do { \
-  void *aligned_addr = page_align((void *)start); \
-  int count = ((void *)start) - aligned_addr + len; \
-  mprotect(aligned_addr, count, PROT_READ | PROT_WRITE | PROT_EXEC); \
-  stmt; \
-  mprotect(aligned_addr, count, PROT_READ | PROT_EXEC); \
-} while (0)
-
 #endif
