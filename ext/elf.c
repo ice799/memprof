@@ -1197,7 +1197,11 @@ dissect_elf(struct elf_info *info, int find_debug)
 
 out:
   if (find_debug && ret == 1) {
-    find_debug_syms(info);
+    if (info->debuglink_addr) {
+      find_debug_syms(info);
+    } else {
+      dbg_printf("=== WARNING: Object %s was STRIPPED and had no debuglink section. Nothing left to try.", info->filename);
+    }
   }
   return ret;
 }
