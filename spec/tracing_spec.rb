@@ -119,7 +119,7 @@ describe 'Memprof request tracing' do
   end
 
   should 'trace request env' do
-    env = {"HEADER" => "value"}
+    env = {"REQUEST_PATH" => "value"}
 
     Memprof.trace_filename = filename
     Memprof.trace_filename.should == filename
@@ -130,6 +130,6 @@ describe 'Memprof request tracing' do
     Memprof.trace_filename = nil
     Memprof.trace_filename.should.be.nil
 
-    filedata.should =~ /"HEADER":"value"/
+    filedata.should =~ /"REQUEST_PATH":"value"/
   end
 end
