@@ -85,7 +85,8 @@ get_dyld_stub_target(struct dyld_stub_entry *entry) {
 
 static inline void
 set_dyld_stub_target(struct dyld_stub_entry *entry, void *addr) {
-  *((void**)((void*)(entry + 1) + entry->offset)) = addr;
+  void *target = (void *)(entry+1) + entry->offset;
+  copy_instructions(target, &addr, sizeof(void *));
 }
 
 static inline const char*
