@@ -443,8 +443,10 @@ static yajl_gen tracing_json_gen = NULL;
 static VALUE
 memprof_trace_filename_set(int argc, VALUE *argv, VALUE self)
 {
-  if (tracing_json_gen)
+  if (tracing_json_gen) {
     json_free(tracing_json_gen);
+    tracing_json_gen = NULL;
+  }
 
   if (!RTEST(*argv)) {
     tracing_json_filename = Qnil;
@@ -549,11 +551,10 @@ memprof_trace_request(VALUE self, VALUE env)
   yajl_gen_double(gen, secs);
 
   yajl_gen_map_close(gen);
+  yajl_gen_reset(gen);
 
   if (gen != tracing_json_gen)
     json_free(gen);
-  else
-    yajl_gen_reset(gen);
 
   return ret;
 }
