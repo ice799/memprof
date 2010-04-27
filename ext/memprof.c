@@ -531,7 +531,9 @@ memprof_trace_request(VALUE self, VALUE env)
 
     #define DUMP_HASH_ENTRY(key) do {                    \
       str = rb_hash_aref(env, rb_str_new2(key));         \
-      if (RTEST(str) && BUILTIN_TYPE(str) == T_STRING) { \
+      if (RTEST(str) &&                                  \
+          BUILTIN_TYPE(str) == T_STRING &&               \
+          RSTRING_PTR(str)) {                            \
         json_gen_cstr(gen, key);                         \
         json_gen_cstr(gen, RSTRING_PTR(str));            \
       }                                                  \
