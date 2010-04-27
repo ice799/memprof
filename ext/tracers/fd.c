@@ -142,53 +142,53 @@ fd_trace_reset() {
 }
 
 static void
-fd_trace_dump(yajl_gen gen) {
+fd_trace_dump(json_gen gen) {
   if (stats.read_calls > 0) {
-    yajl_gen_cstr(gen, "read");
-    yajl_gen_map_open(gen);
-    yajl_gen_cstr(gen, "calls");
-    yajl_gen_integer(gen, stats.read_calls);
-    yajl_gen_cstr(gen, "time");
-    yajl_gen_double(gen, stats.read_time);
-    yajl_gen_cstr(gen, "requested");
-    yajl_gen_integer(gen, stats.read_requested_bytes);
-    yajl_gen_cstr(gen, "actual");
-    yajl_gen_integer(gen, stats.read_actual_bytes);
-    yajl_gen_map_close(gen);
+    json_gen_cstr(gen, "read");
+    json_gen_map_open(gen);
+    json_gen_cstr(gen, "calls");
+    json_gen_integer(gen, stats.read_calls);
+    json_gen_cstr(gen, "time");
+    json_gen_double(gen, stats.read_time);
+    json_gen_cstr(gen, "requested");
+    json_gen_integer(gen, stats.read_requested_bytes);
+    json_gen_cstr(gen, "actual");
+    json_gen_integer(gen, stats.read_actual_bytes);
+    json_gen_map_close(gen);
   }
 
   if (stats.write_calls > 0) {
-    yajl_gen_cstr(gen, "write");
-    yajl_gen_map_open(gen);
-    yajl_gen_cstr(gen, "calls");
-    yajl_gen_integer(gen, stats.write_calls);
-    yajl_gen_cstr(gen, "time");
-    yajl_gen_double(gen, stats.write_time);
-    yajl_gen_cstr(gen, "requested");
-    yajl_gen_integer(gen, stats.write_requested_bytes);
-    yajl_gen_cstr(gen, "actual");
-    yajl_gen_integer(gen, stats.write_actual_bytes);
-    yajl_gen_map_close(gen);
+    json_gen_cstr(gen, "write");
+    json_gen_map_open(gen);
+    json_gen_cstr(gen, "calls");
+    json_gen_integer(gen, stats.write_calls);
+    json_gen_cstr(gen, "time");
+    json_gen_double(gen, stats.write_time);
+    json_gen_cstr(gen, "requested");
+    json_gen_integer(gen, stats.write_requested_bytes);
+    json_gen_cstr(gen, "actual");
+    json_gen_integer(gen, stats.write_actual_bytes);
+    json_gen_map_close(gen);
   }
 
   if (stats.connect_calls > 0) {
-    yajl_gen_cstr(gen, "connect");
-    yajl_gen_map_open(gen);
-    yajl_gen_cstr(gen, "calls");
-    yajl_gen_integer(gen, stats.connect_calls);
-    yajl_gen_cstr(gen, "time");
-    yajl_gen_double(gen, stats.connect_time);
-    yajl_gen_map_close(gen);
+    json_gen_cstr(gen, "connect");
+    json_gen_map_open(gen);
+    json_gen_cstr(gen, "calls");
+    json_gen_integer(gen, stats.connect_calls);
+    json_gen_cstr(gen, "time");
+    json_gen_double(gen, stats.connect_time);
+    json_gen_map_close(gen);
   }
 
   if (stats.select_calls > 0) {
-    yajl_gen_cstr(gen, "select");
-    yajl_gen_map_open(gen);
-    yajl_gen_cstr(gen, "calls");
-    yajl_gen_integer(gen, stats.select_calls);
-    yajl_gen_cstr(gen, "time");
-    yajl_gen_double(gen, stats.select_time);
-    yajl_gen_map_close(gen);
+    json_gen_cstr(gen, "select");
+    json_gen_map_open(gen);
+    json_gen_cstr(gen, "calls");
+    json_gen_integer(gen, stats.select_calls);
+    json_gen_cstr(gen, "time");
+    json_gen_double(gen, stats.select_time);
+    json_gen_map_close(gen);
   }
 }
 

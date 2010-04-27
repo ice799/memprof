@@ -60,13 +60,13 @@ mysql_trace_reset() {
 }
 
 static void
-mysql_trace_dump(yajl_gen gen) {
+mysql_trace_dump(json_gen gen) {
   if (stats.query_calls > 0) {
-    yajl_gen_cstr(gen, "queries");
-    yajl_gen_integer(gen, stats.query_calls);
+    json_gen_cstr(gen, "queries");
+    json_gen_integer(gen, stats.query_calls);
 
-    yajl_gen_cstr(gen, "time");
-    yajl_gen_double(gen, stats.query_time);
+    json_gen_cstr(gen, "time");
+    json_gen_double(gen, stats.query_time);
   }
 
   // fprintf(stderr, "================ Mysql ====================================\n");

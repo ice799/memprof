@@ -59,12 +59,12 @@ gc_trace_reset() {
 }
 
 static void
-gc_trace_dump(yajl_gen gen) {
-  yajl_gen_cstr(gen, "calls");
-  yajl_gen_integer(gen, stats.gc_calls);
+gc_trace_dump(json_gen gen) {
+  json_gen_cstr(gen, "calls");
+  json_gen_integer(gen, stats.gc_calls);
 
-  yajl_gen_cstr(gen, "time");
-  yajl_gen_double(gen, stats.gc_time);
+  json_gen_cstr(gen, "time");
+  json_gen_double(gen, stats.gc_time);
 
   // fprintf(stderr, "================ GC =======================================\n");
   // fprintf(stderr, " # calls: %zd\n time: %fs\n", stats.gc_calls, stats.gc_time);

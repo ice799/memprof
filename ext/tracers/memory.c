@@ -133,52 +133,52 @@ malloc_trace_reset()
 }
 
 static void
-malloc_trace_dump(yajl_gen gen)
+malloc_trace_dump(json_gen gen)
 {
   if (stats.malloc_calls > 0) {
-    yajl_gen_cstr(gen, "malloc");
-    yajl_gen_map_open(gen);
-    yajl_gen_cstr(gen, "calls");
-    yajl_gen_integer(gen, stats.malloc_calls);
-    yajl_gen_cstr(gen, "requested");
-    yajl_gen_integer(gen, stats.malloc_bytes_requested);
-    yajl_gen_cstr(gen, "actual");
-    yajl_gen_integer(gen, stats.malloc_bytes_actual);
-    yajl_gen_map_close(gen);
+    json_gen_cstr(gen, "malloc");
+    json_gen_map_open(gen);
+    json_gen_cstr(gen, "calls");
+    json_gen_integer(gen, stats.malloc_calls);
+    json_gen_cstr(gen, "requested");
+    json_gen_integer(gen, stats.malloc_bytes_requested);
+    json_gen_cstr(gen, "actual");
+    json_gen_integer(gen, stats.malloc_bytes_actual);
+    json_gen_map_close(gen);
   }
 
   if (stats.realloc_calls > 0) {
-    yajl_gen_cstr(gen, "realloc");
-    yajl_gen_map_open(gen);
-    yajl_gen_cstr(gen, "calls");
-    yajl_gen_integer(gen, stats.realloc_calls);
-    yajl_gen_cstr(gen, "requested");
-    yajl_gen_integer(gen, stats.realloc_bytes_requested);
-    yajl_gen_cstr(gen, "actual");
-    yajl_gen_integer(gen, stats.realloc_bytes_actual);
-    yajl_gen_map_close(gen);
+    json_gen_cstr(gen, "realloc");
+    json_gen_map_open(gen);
+    json_gen_cstr(gen, "calls");
+    json_gen_integer(gen, stats.realloc_calls);
+    json_gen_cstr(gen, "requested");
+    json_gen_integer(gen, stats.realloc_bytes_requested);
+    json_gen_cstr(gen, "actual");
+    json_gen_integer(gen, stats.realloc_bytes_actual);
+    json_gen_map_close(gen);
   }
 
   if (stats.calloc_calls > 0) {
-    yajl_gen_cstr(gen, "calloc");
-    yajl_gen_map_open(gen);
-    yajl_gen_cstr(gen, "calls");
-    yajl_gen_integer(gen, stats.calloc_calls);
-    yajl_gen_cstr(gen, "requested");
-    yajl_gen_integer(gen, stats.calloc_bytes_requested);
-    yajl_gen_cstr(gen, "actual");
-    yajl_gen_integer(gen, stats.calloc_bytes_actual);
-    yajl_gen_map_close(gen);
+    json_gen_cstr(gen, "calloc");
+    json_gen_map_open(gen);
+    json_gen_cstr(gen, "calls");
+    json_gen_integer(gen, stats.calloc_calls);
+    json_gen_cstr(gen, "requested");
+    json_gen_integer(gen, stats.calloc_bytes_requested);
+    json_gen_cstr(gen, "actual");
+    json_gen_integer(gen, stats.calloc_bytes_actual);
+    json_gen_map_close(gen);
   }
 
   if (stats.free_calls > 0) {
-    yajl_gen_cstr(gen, "free");
-    yajl_gen_map_open(gen);
-    yajl_gen_cstr(gen, "calls");
-    yajl_gen_integer(gen, stats.free_calls);
-    yajl_gen_cstr(gen, "actual");
-    yajl_gen_integer(gen, stats.free_bytes_actual);
-    yajl_gen_map_close(gen);
+    json_gen_cstr(gen, "free");
+    json_gen_map_open(gen);
+    json_gen_cstr(gen, "calls");
+    json_gen_integer(gen, stats.free_calls);
+    json_gen_cstr(gen, "actual");
+    json_gen_integer(gen, stats.free_bytes_actual);
+    json_gen_map_close(gen);
   }
 
   // fprintf(stderr, "================ Malloc ===================================\n");

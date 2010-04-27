@@ -8,7 +8,7 @@ struct tracer {
   void (*start)();
   void (*stop)();
   void (*reset)();
-  void (*dump)(yajl_gen);
+  void (*dump)(json_gen);
 };
 
 typedef enum {
@@ -31,9 +31,9 @@ int
 trace_invoke(const char *id, trace_fn fn);
 
 void
-trace_set_output(yajl_gen gen);
+trace_set_output(json_gen gen);
 
-yajl_gen
+json_gen
 trace_get_output();
 
 double

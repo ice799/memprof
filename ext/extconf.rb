@@ -33,17 +33,23 @@ unless File.exists?("#{CWD}/dst/lib/libyajl_ext.a")
 
     sys("tar zxvf #{yajl}")
     Dir.chdir("#{dir}/src") do
-      FileUtils.mkdir_p "api/yajl"
+      sys("sed -i -e 's,yajl,json,g' *.h *.c api/*.h")
+      Dir['{,api/}yajl*.{h,c}'].each do |file|
+        FileUtils.mv file, file.gsub('yajl', 'json')
+      end
+
+      FileUtils.mkdir_p "api/json"
       %w[ common parse gen ].each do |f|
-        FileUtils.cp "api/yajl_#{f}.h", 'api/yajl/'
+        FileUtils.cp "api/json_#{f}.h", 'api/json/'
       end
 
       File.open("extconf.rb",'w') do |f|
         f.puts "require 'mkmf'; $INCFLAGS[0,0] = '-I./api/ '; create_makefile 'libyajl'"
       end
-      sys("#{Config::CONFIG['bindir']}/#{Config::CONFIG['ruby_install_name']} extconf.rb")
 
+      sys("#{Config::CONFIG['bindir']}/#{Config::CONFIG['ruby_install_name']} extconf.rb")
       sys("make")
+
       if RUBY_PLATFORM =~ /darwin/
         sys("libtool -static -o libyajl_ext.a #{Dir['*.o'].join(' ')}")
       else
@@ -53,7 +59,7 @@ unless File.exists?("#{CWD}/dst/lib/libyajl_ext.a")
       FileUtils.mkdir_p "#{CWD}/dst/lib"
       FileUtils.cp 'libyajl_ext.a', "#{CWD}/dst/lib"
       FileUtils.mkdir_p "#{CWD}/dst/include"
-      FileUtils.cp_r 'api/yajl', "#{CWD}/dst/include/"
+      FileUtils.cp_r 'api/json', "#{CWD}/dst/include/"
     end
   end
 end
@@ -61,7 +67,7 @@ end
 $LIBPATH.unshift "#{CWD}/dst/lib"
 $INCFLAGS[0,0] = "-I#{CWD}/dst/include "
 
-unless have_library('yajl_ext') and have_header('yajl/yajl_gen.h')
+unless have_library('yajl_ext') and have_header('json/json_gen.h')
   raise 'Yajl build failed'
 end
 

@@ -360,10 +360,10 @@ memprof_track(int argc, VALUE *argv, VALUE self)
   return Qnil;
 }
 
-static yajl_gen_config fancy_conf = { .beautify = 1, .indentString = "  " };
-static yajl_gen_config basic_conf = { .beautify = 0, .indentString = "  " };
+static json_gen_config fancy_conf = { .beautify = 1, .indentString = "  " };
+static json_gen_config basic_conf = { .beautify = 0, .indentString = "  " };
 
-static yajl_gen
+static json_gen
 json_for_args(int argc, VALUE *argv)
 {
   FILE *out = NULL;
@@ -379,18 +379,18 @@ json_for_args(int argc, VALUE *argv)
   if (!out)
     out = stderr;
 
-  yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, out == stderr ? &fancy_conf : &basic_conf, NULL, (void*)out);
+  json_gen gen = json_gen_alloc2((json_print_t)&json_print, out == stderr ? &fancy_conf : &basic_conf, NULL, (void*)out);
 
   return gen;
 }
 
 static void
-json_free(yajl_gen gen)
+json_free(json_gen gen)
 {
   FILE *out = (FILE*)gen->ctx;
   if (out != stderr)
     fclose(out);
-  yajl_gen_free(gen);
+  json_gen_free(gen);
 }
 
 static VALUE
@@ -399,10 +399,10 @@ memprof_trace(int argc, VALUE *argv, VALUE self)
   if (!rb_block_given_p())
     rb_raise(rb_eArgError, "block required");
 
-  yajl_gen gen = json_for_args(argc, argv);
+  json_gen gen = json_for_args(argc, argv);
 
   trace_set_output(gen);
-  yajl_gen_map_open(gen);
+  json_gen_map_open(gen);
 
   trace_invoke_all(TRACE_RESET);
   trace_invoke_all(TRACE_START);
@@ -412,8 +412,8 @@ memprof_trace(int argc, VALUE *argv, VALUE self)
   trace_invoke_all(TRACE_DUMP);
   trace_invoke_all(TRACE_STOP);
 
-  yajl_gen_map_close(gen);
-  yajl_gen_reset(gen);
+  json_gen_map_close(gen);
+  json_gen_reset(gen);
 
   json_free(gen);
   trace_set_output(NULL);
@@ -424,21 +424,21 @@ memprof_trace(int argc, VALUE *argv, VALUE self)
 static int
 each_request_entry(st_data_t key, st_data_t record, st_data_t arg)
 {
-  yajl_gen gen = (yajl_gen)arg;
+  json_gen gen = (json_gen)arg;
   VALUE k = (VALUE)key;
   VALUE v = (VALUE)record;
 
   if (RTEST(v) && BUILTIN_TYPE(v) == T_STRING && RTEST(k) && BUILTIN_TYPE(k) == T_STRING &&
       RSTRING_PTR(k)[0] >= 65 && RSTRING_PTR(k)[0] <= 90) {
-    yajl_gen_cstr(gen, StringValueCStr(k));
-    yajl_gen_cstr(gen, StringValueCStr(v));
+    json_gen_cstr(gen, StringValueCStr(k));
+    json_gen_cstr(gen, StringValueCStr(v));
   }
 
   return ST_CONTINUE;
 }
 
 static VALUE tracing_json_filename = Qnil;
-static yajl_gen tracing_json_gen = NULL;
+static json_gen tracing_json_gen = NULL;
 
 static VALUE
 memprof_trace_filename_set(int argc, VALUE *argv, VALUE self)
@@ -473,20 +473,20 @@ memprof_trace_request(VALUE self, VALUE env)
   double secs;
   struct timeval now;
 
-  yajl_gen gen;
+  json_gen gen;
   if (tracing_json_gen)
     gen = tracing_json_gen;
   else
     gen = json_for_args(0, NULL);
 
-  yajl_gen_map_open(gen);
+  json_gen_map_open(gen);
 
-  yajl_gen_cstr(gen, "start");
+  json_gen_cstr(gen, "start");
   gettimeofday(&now, NULL);
-  yajl_gen_integer(gen, (now.tv_sec * 1000000) + now.tv_usec);
+  json_gen_integer(gen, (now.tv_sec * 1000000) + now.tv_usec);
 
-  yajl_gen_cstr(gen, "tracers");
-  yajl_gen_map_open(gen);
+  json_gen_cstr(gen, "tracers");
+  json_gen_map_open(gen);
 
   trace_set_output(gen);
   trace_invoke_all(TRACE_RESET);
@@ -499,7 +499,7 @@ memprof_trace_request(VALUE self, VALUE env)
   trace_invoke_all(TRACE_DUMP);
   trace_invoke_all(TRACE_STOP);
 
-  yajl_gen_map_close(gen);
+  json_gen_map_close(gen);
 
   if (RTEST(env) && BUILTIN_TYPE(env) == T_HASH) {
     VALUE val, str;
@@ -508,32 +508,32 @@ memprof_trace_request(VALUE self, VALUE env)
       val = rb_hash_aref(env, rb_str_new2("action_dispatch.request.parameters"));
 
     if (RTEST(val) && BUILTIN_TYPE(val) == T_HASH) {
-      yajl_gen_cstr(gen, "rails");
-      yajl_gen_map_open(gen);
+      json_gen_cstr(gen, "rails");
+      json_gen_map_open(gen);
       str = rb_hash_aref(val, rb_str_new2("controller"));
       if (RTEST(str) && BUILTIN_TYPE(str) == T_STRING) {
-        yajl_gen_cstr(gen, "controller");
-        yajl_gen_cstr(gen, RSTRING_PTR(str));
+        json_gen_cstr(gen, "controller");
+        json_gen_cstr(gen, RSTRING_PTR(str));
       }
 
       str = rb_hash_aref(val, rb_str_new2("action"));
       if (RTEST(str) && BUILTIN_TYPE(str) == T_STRING) {
-        yajl_gen_cstr(gen, "action");
-        yajl_gen_cstr(gen, RSTRING_PTR(str));
+        json_gen_cstr(gen, "action");
+        json_gen_cstr(gen, RSTRING_PTR(str));
       }
-      yajl_gen_map_close(gen);
+      json_gen_map_close(gen);
     }
 
-    yajl_gen_cstr(gen, "request");
-    yajl_gen_map_open(gen);
+    json_gen_cstr(gen, "request");
+    json_gen_map_open(gen);
     // struct RHash *hash = RHASH(env);
     // st_foreach(hash->tbl, each_request_entry, (st_data_t)gen);
 
     #define DUMP_HASH_ENTRY(key) do {                    \
       str = rb_hash_aref(env, rb_str_new2(key));         \
       if (RTEST(str) && BUILTIN_TYPE(str) == T_STRING) { \
-        yajl_gen_cstr(gen, key);                         \
-        yajl_gen_cstr(gen, RSTRING_PTR(str));            \
+        json_gen_cstr(gen, key);                         \
+        json_gen_cstr(gen, RSTRING_PTR(str));            \
       }                                                  \
     } while(0)
     // DUMP_HASH_ENTRY("HTTP_USER_AGENT");
@@ -544,14 +544,14 @@ memprof_trace_request(VALUE self, VALUE env)
     DUMP_HASH_ENTRY("REQUEST_METHOD");
     DUMP_HASH_ENTRY("QUERY_STRING");
 
-    yajl_gen_map_close(gen);
+    json_gen_map_close(gen);
   }
 
-  yajl_gen_cstr(gen, "time");
-  yajl_gen_double(gen, secs);
+  json_gen_cstr(gen, "time");
+  json_gen_double(gen, secs);
 
-  yajl_gen_map_close(gen);
-  yajl_gen_reset(gen);
+  json_gen_map_close(gen);
+  json_gen_reset(gen);
 
   if (gen != tracing_json_gen)
     json_free(gen);
@@ -580,46 +580,46 @@ memprof_trace_request(VALUE self, VALUE env)
 #define RSTRING_LEN(str) RSTRING(str)->len
 #endif
 
-static yajl_gen_status
-yajl_gen_id(yajl_gen gen, ID id)
+static json_gen_status
+json_gen_id(json_gen gen, ID id)
 {
   if (id) {
     if (id < 100)
-      return yajl_gen_format(gen, ":%c", id);
+      return json_gen_format(gen, ":%c", id);
     else
-      return yajl_gen_format(gen, ":%s", rb_id2name(id));
+      return json_gen_format(gen, ":%s", rb_id2name(id));
   } else
-    return yajl_gen_null(gen);
+    return json_gen_null(gen);
 }
 
-static yajl_gen_status
-yajl_gen_value(yajl_gen gen, VALUE obj)
+static json_gen_status
+json_gen_value(json_gen gen, VALUE obj)
 {
   if (FIXNUM_P(obj))
-    return yajl_gen_integer(gen, NUM2LONG(obj));
+    return json_gen_integer(gen, NUM2LONG(obj));
   else if (NIL_P(obj) || obj == Qundef)
-    return yajl_gen_null(gen);
+    return json_gen_null(gen);
   else if (obj == Qtrue)
-    return yajl_gen_bool(gen, 1);
+    return json_gen_bool(gen, 1);
   else if (obj == Qfalse)
-    return yajl_gen_bool(gen, 0);
+    return json_gen_bool(gen, 0);
   else if (SYMBOL_P(obj))
-    return yajl_gen_id(gen, SYM2ID(obj));
+    return json_gen_id(gen, SYM2ID(obj));
   else
-    return yajl_gen_pointer(gen, (void*)obj);
+    return json_gen_pointer(gen, (void*)obj);
 }
 
 static int
 each_hash_entry(st_data_t key, st_data_t record, st_data_t arg)
 {
-  yajl_gen gen = (yajl_gen)arg;
+  json_gen gen = (json_gen)arg;
   VALUE k = (VALUE)key;
   VALUE v = (VALUE)record;
 
-  yajl_gen_array_open(gen);
-  yajl_gen_value(gen, k);
-  yajl_gen_value(gen, v);
-  yajl_gen_array_close(gen);
+  json_gen_array_open(gen);
+  json_gen_value(gen, k);
+  json_gen_value(gen, v);
+  json_gen_array_close(gen);
 
   return ST_CONTINUE;
 }
@@ -627,13 +627,13 @@ each_hash_entry(st_data_t key, st_data_t record, st_data_t arg)
 static int
 each_ivar(st_data_t key, st_data_t record, st_data_t arg)
 {
-  yajl_gen gen = (yajl_gen)arg;
+  json_gen gen = (json_gen)arg;
   ID id = (ID)key;
   VALUE val = (VALUE)record;
   const char *name = rb_id2name(id);
 
-  yajl_gen_cstr(gen, name ? name : "(none)");
-  yajl_gen_value(gen, val);
+  json_gen_cstr(gen, name ? name : "(none)");
+  json_gen_value(gen, val);
 
   return ST_CONTINUE;
 }
@@ -676,16 +676,16 @@ nd_type_str(VALUE obj)
 }
 
 static inline void
-obj_dump_class(yajl_gen gen, VALUE obj)
+obj_dump_class(json_gen gen, VALUE obj)
 {
   if (RBASIC(obj)->klass) {
-    yajl_gen_cstr(gen, "class");
-    yajl_gen_value(gen, RBASIC(obj)->klass);
+    json_gen_cstr(gen, "class");
+    json_gen_value(gen, RBASIC(obj)->klass);
 
     VALUE name = rb_classname(RBASIC(obj)->klass);
     if (RTEST(name)) {
-      yajl_gen_cstr(gen, "class_name");
-      yajl_gen_cstr(gen, RSTRING_PTR(name));
+      json_gen_cstr(gen, "class_name");
+      json_gen_cstr(gen, RSTRING_PTR(name));
     }
   }
 }
@@ -698,33 +698,33 @@ obj_dump_class(yajl_gen gen, VALUE obj)
  */
 
 static void
-obj_dump(VALUE obj, yajl_gen gen)
+obj_dump(VALUE obj, json_gen gen)
 {
   int type;
-  yajl_gen_map_open(gen);
+  json_gen_map_open(gen);
 
-  yajl_gen_cstr(gen, "_id");
-  yajl_gen_value(gen, obj);
+  json_gen_cstr(gen, "_id");
+  json_gen_value(gen, obj);
 
   struct obj_track *tracker = NULL;
   if (st_lookup(objs, (st_data_t)obj, (st_data_t *)&tracker) && BUILTIN_TYPE(obj) != T_NODE) {
-    yajl_gen_cstr(gen, "file");
-    yajl_gen_cstr(gen, tracker->source);
-    yajl_gen_cstr(gen, "line");
-    yajl_gen_integer(gen, tracker->line);
-    yajl_gen_cstr(gen, "time");
-    yajl_gen_integer(gen, (tracker->time[0].tv_sec * 1000000) + tracker->time[0].tv_usec);
+    json_gen_cstr(gen, "file");
+    json_gen_cstr(gen, tracker->source);
+    json_gen_cstr(gen, "line");
+    json_gen_integer(gen, tracker->line);
+    json_gen_cstr(gen, "time");
+    json_gen_integer(gen, (tracker->time[0].tv_sec * 1000000) + tracker->time[0].tv_usec);
   }
 
-  yajl_gen_cstr(gen, "type");
+  json_gen_cstr(gen, "type");
   switch (type=BUILTIN_TYPE(obj)) {
     case T_DATA:
-      yajl_gen_cstr(gen, "data");
+      json_gen_cstr(gen, "data");
       obj_dump_class(gen, obj);
 
       if (DATA_PTR(obj)) {
-        yajl_gen_cstr(gen, "data");
-        yajl_gen_pointer(gen, DATA_PTR(obj));
+        json_gen_cstr(gen, "data");
+        json_gen_pointer(gen, DATA_PTR(obj));
       }
 
       if (RDATA(obj)->dfree == (RUBY_DATA_FUNC)rb_blk_free) {
@@ -733,73 +733,73 @@ obj_dump(VALUE obj, yajl_gen gen)
 
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_body);
         if (val) {
-          yajl_gen_cstr(gen, "nd_body");
-          yajl_gen_pointer(gen, val);
+          json_gen_cstr(gen, "nd_body");
+          json_gen_pointer(gen, val);
         }
 
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_var);
         if (val) {
-          yajl_gen_cstr(gen, "nd_var");
-          yajl_gen_pointer(gen, val);
+          json_gen_cstr(gen, "nd_var");
+          json_gen_pointer(gen, val);
         }
 
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_cref);
         if (val) {
-          yajl_gen_cstr(gen, "nd_cref");
-          yajl_gen_pointer(gen, val);
+          json_gen_cstr(gen, "nd_cref");
+          json_gen_pointer(gen, val);
         }
 
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_dyna_vars);
         if (val) {
-          yajl_gen_cstr(gen, "vars");
-          yajl_gen_pointer(gen, val);
+          json_gen_cstr(gen, "vars");
+          json_gen_pointer(gen, val);
         }
 
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_scope);
         if (val) {
-          yajl_gen_cstr(gen, "scope");
-          yajl_gen_pointer(gen, val);
+          json_gen_cstr(gen, "scope");
+          json_gen_pointer(gen, val);
         }
 
         ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_BLOCK_self);
-        yajl_gen_cstr(gen, "self");
-        yajl_gen_value(gen, ptr);
+        json_gen_cstr(gen, "self");
+        json_gen_value(gen, ptr);
 
         ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_BLOCK_klass);
-        yajl_gen_cstr(gen, "klass");
-        yajl_gen_value(gen, ptr);
+        json_gen_cstr(gen, "klass");
+        json_gen_value(gen, ptr);
 
         ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_BLOCK_orig_thread);
-        yajl_gen_cstr(gen, "thread");
-        yajl_gen_value(gen, ptr);
+        json_gen_cstr(gen, "thread");
+        json_gen_value(gen, ptr);
 
         ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_BLOCK_wrapper);
         if (RTEST(ptr)) {
-          yajl_gen_cstr(gen, "wrapper");
-          yajl_gen_value(gen, ptr);
+          json_gen_cstr(gen, "wrapper");
+          json_gen_value(gen, ptr);
         }
 
         ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_BLOCK_block_obj);
         if (RTEST(ptr)) {
-          yajl_gen_cstr(gen, "block");
-          yajl_gen_value(gen, ptr);
+          json_gen_cstr(gen, "block");
+          json_gen_value(gen, ptr);
         }
 
         /* TODO: is .prev actually useful? refers to non-heap allocated struct BLOCKs,
          * but we don't print out any information about those
          */
         /*
-        yajl_gen_cstr(gen, "prev");
-        yajl_gen_array_open(gen);
+        json_gen_cstr(gen, "prev");
+        json_gen_array_open(gen);
         val = *(void**)(DATA_PTR(obj) + memprof_config.offset_BLOCK_prev);
         while (val) {
-          yajl_gen_pointer(gen, val);
+          json_gen_pointer(gen, val);
           prev = val;
           val = *(void**)(ptr + memprof_config.offset_BLOCK_prev);
           if (prev == val)
             break;
         }
-        yajl_gen_array_close(gen);
+        json_gen_array_close(gen);
         */
 
       } else if (RDATA(obj)->dmark == (RUBY_DATA_FUNC)rb_bm_mark) {
@@ -808,57 +808,57 @@ obj_dump(VALUE obj, yajl_gen gen)
 
         ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_METHOD_klass);
         if (RTEST(ptr)) {
-          yajl_gen_cstr(gen, "klass");
-          yajl_gen_value(gen, ptr);
+          json_gen_cstr(gen, "klass");
+          json_gen_value(gen, ptr);
         }
 
         ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_METHOD_rklass);
         if (RTEST(ptr)) {
-          yajl_gen_cstr(gen, "rklass");
-          yajl_gen_value(gen, ptr);
+          json_gen_cstr(gen, "rklass");
+          json_gen_value(gen, ptr);
         }
 
         ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_METHOD_recv);
         if (RTEST(ptr)) {
-          yajl_gen_cstr(gen, "recv");
-          yajl_gen_value(gen, ptr);
+          json_gen_cstr(gen, "recv");
+          json_gen_value(gen, ptr);
         }
 
         ptr = *(VALUE*)(DATA_PTR(obj) + memprof_config.offset_METHOD_body);
         if (RTEST(ptr)) {
-          yajl_gen_cstr(gen, "node");
-          yajl_gen_value(gen, ptr);
+          json_gen_cstr(gen, "node");
+          json_gen_value(gen, ptr);
         }
 
         mid = *(ID*)(DATA_PTR(obj) + memprof_config.offset_METHOD_id);
         if (mid) {
-          yajl_gen_cstr(gen, "mid");
-          yajl_gen_id(gen, mid);
+          json_gen_cstr(gen, "mid");
+          json_gen_id(gen, mid);
         }
 
         id = *(ID*)(DATA_PTR(obj) + memprof_config.offset_METHOD_oid);
         if (id && id != mid) {
-          yajl_gen_cstr(gen, "oid");
-          yajl_gen_id(gen, id);
+          json_gen_cstr(gen, "oid");
+          json_gen_id(gen, id);
         }
 
       } else if (RDATA(obj)->dmark == (RUBY_DATA_FUNC)rb_thread_mark) {
         rb_thread_t th = (rb_thread_t)DATA_PTR(obj);
 
         if (th == rb_curr_thread) {
-          yajl_gen_cstr(gen, "current");
-          yajl_gen_bool(gen, 1);
+          json_gen_cstr(gen, "current");
+          json_gen_bool(gen, 1);
         } else {
           if (th->dyna_vars) {
-            yajl_gen_cstr(gen, "varmap");
-            yajl_gen_pointer(gen, th->dyna_vars);
+            json_gen_cstr(gen, "varmap");
+            json_gen_pointer(gen, th->dyna_vars);
           }
 
-          yajl_gen_cstr(gen, "node");
-          yajl_gen_pointer(gen, th->node);
+          json_gen_cstr(gen, "node");
+          json_gen_pointer(gen, th->node);
 
-          yajl_gen_cstr(gen, "cref");
-          yajl_gen_pointer(gen, th->cref);
+          json_gen_cstr(gen, "cref");
+          json_gen_pointer(gen, th->cref);
 
           char *status;
           switch (th->status) {
@@ -878,8 +878,8 @@ obj_dump(VALUE obj, yajl_gen gen)
               status = "unknown";
           }
 
-          yajl_gen_cstr(gen, "status");
-          yajl_gen_cstr(gen, status);
+          json_gen_cstr(gen, "status");
+          json_gen_cstr(gen, status);
 
           #define WAIT_FD		(1<<0)
           #define WAIT_SELECT	(1<<1)
@@ -887,172 +887,172 @@ obj_dump(VALUE obj, yajl_gen gen)
           #define WAIT_JOIN	(1<<3)
           #define WAIT_PID	(1<<4)
 
-          yajl_gen_cstr(gen, "wait_for");
-          yajl_gen_array_open(gen);
+          json_gen_cstr(gen, "wait_for");
+          json_gen_array_open(gen);
           if (th->wait_for & WAIT_FD)
-            yajl_gen_cstr(gen, "fd");
+            json_gen_cstr(gen, "fd");
           if (th->wait_for & WAIT_SELECT)
-            yajl_gen_cstr(gen, "select");
+            json_gen_cstr(gen, "select");
           if (th->wait_for & WAIT_TIME)
-            yajl_gen_cstr(gen, "time");
+            json_gen_cstr(gen, "time");
           if (th->wait_for & WAIT_JOIN)
-            yajl_gen_cstr(gen, "join");
+            json_gen_cstr(gen, "join");
           if (th->wait_for & WAIT_PID)
-            yajl_gen_cstr(gen, "pid");
-          yajl_gen_array_close(gen);
+            json_gen_cstr(gen, "pid");
+          json_gen_array_close(gen);
 
           if (th->wait_for & WAIT_FD) {
-            yajl_gen_cstr(gen, "fd");
-            yajl_gen_integer(gen, th->fd);
+            json_gen_cstr(gen, "fd");
+            json_gen_integer(gen, th->fd);
           }
 
           #define DELAY_INFTY 1E30
 
           if (th->wait_for & WAIT_TIME) {
-            yajl_gen_cstr(gen, "delay");
+            json_gen_cstr(gen, "delay");
             if (th->delay == DELAY_INFTY)
-              yajl_gen_cstr(gen, "infinity");
+              json_gen_cstr(gen, "infinity");
             else
-              yajl_gen_double(gen, th->delay - rb_timeofday());
+              json_gen_double(gen, th->delay - rb_timeofday());
           }
 
           if (th->wait_for & WAIT_JOIN) {
-            yajl_gen_cstr(gen, "join");
-            yajl_gen_value(gen, th->join->thread);
+            json_gen_cstr(gen, "join");
+            json_gen_value(gen, th->join->thread);
           }
         }
 
-        yajl_gen_cstr(gen, "priority");
-        yajl_gen_integer(gen, th->priority);
+        json_gen_cstr(gen, "priority");
+        json_gen_integer(gen, th->priority);
 
         if (th == rb_main_thread) {
-          yajl_gen_cstr(gen, "main");
-          yajl_gen_bool(gen, 1);
+          json_gen_cstr(gen, "main");
+          json_gen_bool(gen, 1);
         }
 
         if (th->next && th->next != rb_main_thread) {
-          yajl_gen_cstr(gen, "next");
-          yajl_gen_value(gen, th->next->thread);
+          json_gen_cstr(gen, "next");
+          json_gen_value(gen, th->next->thread);
         }
         if (th->prev && th->prev != th && (th->prev == rb_main_thread || th->prev != th->next)) {
-          yajl_gen_cstr(gen, "prev");
-          yajl_gen_value(gen, th->prev->thread);
+          json_gen_cstr(gen, "prev");
+          json_gen_value(gen, th->prev->thread);
         }
 
         if (th->locals) {
-          yajl_gen_cstr(gen, "variables");
-          yajl_gen_map_open(gen);
+          json_gen_cstr(gen, "variables");
+          json_gen_map_open(gen);
           st_foreach(th->locals, each_ivar, (st_data_t)gen);
-          yajl_gen_map_close(gen);
+          json_gen_map_close(gen);
         }
 
       }
       break;
 
     case T_STRUCT:
-      yajl_gen_cstr(gen, "struct");
+      json_gen_cstr(gen, "struct");
       obj_dump_class(gen, obj);
       break;
 
     case T_FILE:
-      yajl_gen_cstr(gen, "file");
+      json_gen_cstr(gen, "file");
       obj_dump_class(gen, obj);
 
       OpenFile *file = RFILE(obj)->fptr;
 
       if (file->f) {
-        yajl_gen_cstr(gen, "fileno");
-        yajl_gen_integer(gen, fileno(file->f));
+        json_gen_cstr(gen, "fileno");
+        json_gen_integer(gen, fileno(file->f));
       }
 
       if (file->f2) {
-        yajl_gen_cstr(gen, "fileno2");
-        yajl_gen_integer(gen, fileno(file->f2));
+        json_gen_cstr(gen, "fileno2");
+        json_gen_integer(gen, fileno(file->f2));
       }
 
       if (file->pid) {
-        yajl_gen_cstr(gen, "pid");
-        yajl_gen_integer(gen, file->pid);
+        json_gen_cstr(gen, "pid");
+        json_gen_integer(gen, file->pid);
       }
 
       if (file->path) {
-        yajl_gen_cstr(gen, "path");
-        yajl_gen_cstr(gen, file->path);
+        json_gen_cstr(gen, "path");
+        json_gen_cstr(gen, file->path);
       }
 
       if (file->mode) {
-        yajl_gen_cstr(gen, "mode");
-        yajl_gen_array_open(gen);
+        json_gen_cstr(gen, "mode");
+        json_gen_array_open(gen);
         if (file->mode & FMODE_READABLE)
-          yajl_gen_cstr(gen, "readable");
+          json_gen_cstr(gen, "readable");
         if (file->mode & FMODE_WRITABLE)
-          yajl_gen_cstr(gen, "writable");
+          json_gen_cstr(gen, "writable");
         if (file->mode & FMODE_READWRITE)
-          yajl_gen_cstr(gen, "readwrite");
+          json_gen_cstr(gen, "readwrite");
         if (file->mode & FMODE_APPEND)
-          yajl_gen_cstr(gen, "append");
+          json_gen_cstr(gen, "append");
         if (file->mode & FMODE_CREATE)
-          yajl_gen_cstr(gen, "create");
+          json_gen_cstr(gen, "create");
         if (file->mode & FMODE_BINMODE)
-          yajl_gen_cstr(gen, "binmode");
+          json_gen_cstr(gen, "binmode");
         if (file->mode & FMODE_SYNC)
-          yajl_gen_cstr(gen, "sync");
+          json_gen_cstr(gen, "sync");
         if (file->mode & FMODE_WBUF)
-          yajl_gen_cstr(gen, "wbuf");
+          json_gen_cstr(gen, "wbuf");
         if (file->mode & FMODE_RBUF)
-          yajl_gen_cstr(gen, "rbuf");
+          json_gen_cstr(gen, "rbuf");
         if (file->mode & FMODE_WSPLIT)
-          yajl_gen_cstr(gen, "wsplit");
+          json_gen_cstr(gen, "wsplit");
         if (file->mode & FMODE_WSPLIT_INITIALIZED)
-          yajl_gen_cstr(gen, "wsplit_initialized");
-        yajl_gen_array_close(gen);
+          json_gen_cstr(gen, "wsplit_initialized");
+        json_gen_array_close(gen);
       }
 
       break;
 
     case T_FLOAT:
-      yajl_gen_cstr(gen, "float");
+      json_gen_cstr(gen, "float");
       obj_dump_class(gen, obj);
 
-      yajl_gen_cstr(gen, "data");
-      yajl_gen_double(gen, RFLOAT(obj)->value);
+      json_gen_cstr(gen, "data");
+      json_gen_double(gen, RFLOAT(obj)->value);
       break;
 
     case T_BIGNUM:
-      yajl_gen_cstr(gen, "bignum");
+      json_gen_cstr(gen, "bignum");
       obj_dump_class(gen, obj);
 
-      yajl_gen_cstr(gen, "negative");
-      yajl_gen_bool(gen, RBIGNUM(obj)->sign == 0);
+      json_gen_cstr(gen, "negative");
+      json_gen_bool(gen, RBIGNUM(obj)->sign == 0);
 
-      yajl_gen_cstr(gen, "length");
-      yajl_gen_integer(gen, RBIGNUM(obj)->len);
+      json_gen_cstr(gen, "length");
+      json_gen_integer(gen, RBIGNUM(obj)->len);
 
-      yajl_gen_cstr(gen, "data");
-      yajl_gen_string(gen, RBIGNUM(obj)->digits, RBIGNUM(obj)->len);
+      json_gen_cstr(gen, "data");
+      json_gen_string(gen, RBIGNUM(obj)->digits, RBIGNUM(obj)->len);
       break;
 
     case T_MATCH:
-      yajl_gen_cstr(gen, "match");
+      json_gen_cstr(gen, "match");
       obj_dump_class(gen, obj);
 
-      yajl_gen_cstr(gen, "data");
-      yajl_gen_value(gen, RMATCH(obj)->str);
+      json_gen_cstr(gen, "data");
+      json_gen_value(gen, RMATCH(obj)->str);
       break;
 
     case T_REGEXP:
-      yajl_gen_cstr(gen, "regexp");
+      json_gen_cstr(gen, "regexp");
       obj_dump_class(gen, obj);
 
-      yajl_gen_cstr(gen, "length");
-      yajl_gen_integer(gen, RREGEXP(obj)->len);
+      json_gen_cstr(gen, "length");
+      json_gen_integer(gen, RREGEXP(obj)->len);
 
-      yajl_gen_cstr(gen, "data");
-      yajl_gen_cstr(gen, RREGEXP(obj)->str);
+      json_gen_cstr(gen, "data");
+      json_gen_cstr(gen, RREGEXP(obj)->str);
       break;
 
     case T_SCOPE:
-      yajl_gen_cstr(gen, "scope");
+      json_gen_cstr(gen, "scope");
 
       struct SCOPE *scope = (struct SCOPE *)obj;
       if (scope->local_tbl) {
@@ -1062,13 +1062,13 @@ obj_dump(VALUE obj, yajl_gen gen)
         VALUE cur = *list++;
 
         if (RTEST(cur)) {
-          yajl_gen_cstr(gen, "node");
-          yajl_gen_value(gen, cur);
+          json_gen_cstr(gen, "node");
+          json_gen_value(gen, cur);
         }
 
         if (n) {
-          yajl_gen_cstr(gen, "variables");
-          yajl_gen_map_open(gen);
+          json_gen_cstr(gen, "variables");
+          json_gen_map_open(gen);
           while (n--) {
             cur = *list++;
             i++;
@@ -1076,34 +1076,34 @@ obj_dump(VALUE obj, yajl_gen gen)
             if (!rb_is_local_id(scope->local_tbl[i]))
               continue;
 
-            yajl_gen_id(gen, scope->local_tbl[i]);
-            yajl_gen_value(gen, cur);
+            json_gen_id(gen, scope->local_tbl[i]);
+            json_gen_value(gen, cur);
           }
-          yajl_gen_map_close(gen);
+          json_gen_map_close(gen);
         }
       }
       break;
 
     case T_NODE:
-      yajl_gen_cstr(gen, "node");
+      json_gen_cstr(gen, "node");
 
-      yajl_gen_cstr(gen, "node_type");
-      yajl_gen_cstr(gen, nd_type_str(obj));
+      json_gen_cstr(gen, "node_type");
+      json_gen_cstr(gen, nd_type_str(obj));
 
-      yajl_gen_cstr(gen, "file");
-      yajl_gen_cstr(gen, RNODE(obj)->nd_file);
+      json_gen_cstr(gen, "file");
+      json_gen_cstr(gen, RNODE(obj)->nd_file);
 
-      yajl_gen_cstr(gen, "line");
-      yajl_gen_integer(gen, nd_line(obj));
+      json_gen_cstr(gen, "line");
+      json_gen_integer(gen, nd_line(obj));
 
-      yajl_gen_cstr(gen, "node_code");
-      yajl_gen_integer(gen, nd_type(obj));
+      json_gen_cstr(gen, "node_code");
+      json_gen_integer(gen, nd_type(obj));
 
-      #define PRINT_ID(sub) yajl_gen_id(gen, RNODE(obj)->sub.id)
-      #define PRINT_VAL(sub) yajl_gen_value(gen, RNODE(obj)->sub.value)
+      #define PRINT_ID(sub) json_gen_id(gen, RNODE(obj)->sub.id)
+      #define PRINT_VAL(sub) json_gen_value(gen, RNODE(obj)->sub.value)
 
       int nd_type = nd_type(obj);
-      yajl_gen_cstr(gen, "n1");
+      json_gen_cstr(gen, "n1");
       switch(nd_type) {
         case NODE_LVAR:
         case NODE_DVAR:
@@ -1134,23 +1134,23 @@ obj_dump(VALUE obj, yajl_gen gen)
 
         case NODE_SCOPE: {
           ID *tbl = RNODE(obj)->nd_tbl;
-          yajl_gen_array_open(gen);
+          json_gen_array_open(gen);
           if (tbl) {
             int size = tbl[0];
             int i = 3;
 
             for (; i < size+1; i++) {
-              yajl_gen_id(gen, tbl[i]);
+              json_gen_id(gen, tbl[i]);
             }
           }
-          yajl_gen_array_close(gen);
+          json_gen_array_close(gen);
           break;
         }
 
         case NODE_IFUNC:
         case NODE_CFUNC: {
           const char *name = bin_find_symbol_name((void*)RNODE(obj)->u1.value);
-          yajl_gen_format(gen, "0x%x: %s", RNODE(obj)->u1.value, name ? name : "???");
+          json_gen_format(gen, "0x%x: %s", RNODE(obj)->u1.value, name ? name : "???");
           break;
         }
 
@@ -1158,7 +1158,7 @@ obj_dump(VALUE obj, yajl_gen gen)
           PRINT_VAL(u1);
       }
 
-      yajl_gen_cstr(gen, "n2");
+      json_gen_cstr(gen, "n2");
       switch(nd_type) {
         case NODE_CALL:
         case NODE_FBODY:
@@ -1176,9 +1176,9 @@ obj_dump(VALUE obj, yajl_gen gen)
 
         case NODE_OP_ASGN1:
           if (RNODE(obj)->nd_mid == 0)
-            yajl_gen_cstr(gen, ":||");
+            json_gen_cstr(gen, ":||");
           else if (RNODE(obj)->nd_mid == 1)
-            yajl_gen_cstr(gen, ":&&");
+            json_gen_cstr(gen, ":&&");
           else
             PRINT_ID(u2);
           break;
@@ -1188,9 +1188,9 @@ obj_dump(VALUE obj, yajl_gen gen)
             PRINT_VAL(u2);
           } else {
             if (RNODE(obj)->nd_mid == 0)
-              yajl_gen_cstr(gen, ":||");
+              json_gen_cstr(gen, ":||");
             else if (RNODE(obj)->nd_mid == 1)
-              yajl_gen_cstr(gen, ":&&");
+              json_gen_cstr(gen, ":&&");
             else
               PRINT_ID(u2);
           }
@@ -1202,13 +1202,13 @@ obj_dump(VALUE obj, yajl_gen gen)
         case NODE_IFUNC:
         case NODE_CFUNC:
         case NODE_NEWLINE:
-          yajl_gen_integer(gen, RNODE(obj)->u2.argc);
+          json_gen_integer(gen, RNODE(obj)->u2.argc);
           break;
 
         case NODE_BLOCK:
         case NODE_ARRAY:
           if (RNODE(obj)->u2.node == RNODE(obj))
-            yajl_gen_null(gen);
+            json_gen_null(gen);
           else
             PRINT_VAL(u2);
           break;
@@ -1217,10 +1217,10 @@ obj_dump(VALUE obj, yajl_gen gen)
           PRINT_VAL(u2);
       }
 
-      yajl_gen_cstr(gen, "n3");
+      json_gen_cstr(gen, "n3");
       switch(nd_type) {
         case NODE_ARGS:
-          yajl_gen_integer(gen, RNODE(obj)->u3.cnt);
+          json_gen_integer(gen, RNODE(obj)->u3.cnt);
           break;
 
         case NODE_OP_ASGN2:
@@ -1236,164 +1236,164 @@ obj_dump(VALUE obj, yajl_gen gen)
       break;
 
     case T_STRING:
-      yajl_gen_cstr(gen, "string");
+      json_gen_cstr(gen, "string");
       obj_dump_class(gen, obj);
 
-      yajl_gen_cstr(gen, "length");
-      yajl_gen_integer(gen, RSTRING_LEN(obj));
+      json_gen_cstr(gen, "length");
+      json_gen_integer(gen, RSTRING_LEN(obj));
 
       if (FL_TEST(obj, ELTS_SHARED|FL_USER3)) {
-        yajl_gen_cstr(gen, "shared");
-        yajl_gen_value(gen, RSTRING(obj)->aux.shared);
+        json_gen_cstr(gen, "shared");
+        json_gen_value(gen, RSTRING(obj)->aux.shared);
 
-        yajl_gen_cstr(gen, "flags");
-        yajl_gen_array_open(gen);
+        json_gen_cstr(gen, "flags");
+        json_gen_array_open(gen);
         if (FL_TEST(obj, ELTS_SHARED))
-          yajl_gen_cstr(gen, "elts_shared");
+          json_gen_cstr(gen, "elts_shared");
         if (FL_TEST(obj, FL_USER3))
-          yajl_gen_cstr(gen, "str_assoc");
-        yajl_gen_array_close(gen);
+          json_gen_cstr(gen, "str_assoc");
+        json_gen_array_close(gen);
       } else {
-        yajl_gen_cstr(gen, "data");
-        yajl_gen_string(gen, (unsigned char *)RSTRING_PTR(obj), RSTRING_LEN(obj));
+        json_gen_cstr(gen, "data");
+        json_gen_string(gen, (unsigned char *)RSTRING_PTR(obj), RSTRING_LEN(obj));
       }
       break;
 
     case T_VARMAP:
-      yajl_gen_cstr(gen, "varmap");
+      json_gen_cstr(gen, "varmap");
       obj_dump_class(gen, obj);
 
       struct RVarmap *vars = (struct RVarmap *)obj;
 
       if (vars->next) {
-        yajl_gen_cstr(gen, "next");
-        yajl_gen_value(gen, (VALUE)vars->next);
+        json_gen_cstr(gen, "next");
+        json_gen_value(gen, (VALUE)vars->next);
       }
 
       if (vars->id) {
-        yajl_gen_cstr(gen, "data");
-        yajl_gen_map_open(gen);
-        yajl_gen_id(gen, vars->id);
-        yajl_gen_value(gen, vars->val);
-        yajl_gen_map_close(gen);
+        json_gen_cstr(gen, "data");
+        json_gen_map_open(gen);
+        json_gen_id(gen, vars->id);
+        json_gen_value(gen, vars->val);
+        json_gen_map_close(gen);
       }
       break;
 
     case T_CLASS:
     case T_MODULE:
     case T_ICLASS:
-      yajl_gen_cstr(gen, type==T_CLASS ? "class" : type==T_MODULE ? "module" : "iclass");
+      json_gen_cstr(gen, type==T_CLASS ? "class" : type==T_MODULE ? "module" : "iclass");
       obj_dump_class(gen, obj);
 
-      yajl_gen_cstr(gen, "name");
+      json_gen_cstr(gen, "name");
       VALUE name = rb_classname(obj);
       if (RTEST(name))
-        yajl_gen_cstr(gen, RSTRING_PTR(name));
+        json_gen_cstr(gen, RSTRING_PTR(name));
       else
-        yajl_gen_cstr(gen, 0);
+        json_gen_cstr(gen, 0);
 
-      yajl_gen_cstr(gen, "super");
-      yajl_gen_value(gen, RCLASS(obj)->super);
+      json_gen_cstr(gen, "super");
+      json_gen_value(gen, RCLASS(obj)->super);
 
       if (RTEST(RCLASS(obj)->super)) {
-        yajl_gen_cstr(gen, "super_name");
+        json_gen_cstr(gen, "super_name");
         VALUE super_name = rb_classname(RCLASS(obj)->super);
         if (RTEST(super_name))
-          yajl_gen_cstr(gen, RSTRING_PTR(super_name));
+          json_gen_cstr(gen, RSTRING_PTR(super_name));
         else
-          yajl_gen_cstr(gen, 0);
+          json_gen_cstr(gen, 0);
       }
 
       if (FL_TEST(obj, FL_SINGLETON)) {
-        yajl_gen_cstr(gen, "singleton");
-        yajl_gen_bool(gen, 1);
+        json_gen_cstr(gen, "singleton");
+        json_gen_bool(gen, 1);
       }
 
       if (RCLASS(obj)->iv_tbl && RCLASS(obj)->iv_tbl->num_entries) {
-        yajl_gen_cstr(gen, "ivars");
-        yajl_gen_map_open(gen);
+        json_gen_cstr(gen, "ivars");
+        json_gen_map_open(gen);
         st_foreach(RCLASS(obj)->iv_tbl, each_ivar, (st_data_t)gen);
-        yajl_gen_map_close(gen);
+        json_gen_map_close(gen);
       }
 
       if (RCLASS(obj)->m_tbl && RCLASS(obj)->m_tbl->num_entries) {
-        yajl_gen_cstr(gen, "methods");
-        yajl_gen_map_open(gen);
+        json_gen_cstr(gen, "methods");
+        json_gen_map_open(gen);
         st_foreach(RCLASS(obj)->m_tbl, each_ivar, (st_data_t)gen);
-        yajl_gen_map_close(gen);
+        json_gen_map_close(gen);
       }
       break;
 
     case T_OBJECT:
-      yajl_gen_cstr(gen, "object");
+      json_gen_cstr(gen, "object");
       obj_dump_class(gen, obj);
 
       struct RClass *klass = RCLASS(obj);
 
       if (klass->iv_tbl && klass->iv_tbl->num_entries) {
-        yajl_gen_cstr(gen, "ivars");
-        yajl_gen_map_open(gen);
+        json_gen_cstr(gen, "ivars");
+        json_gen_map_open(gen);
         st_foreach(klass->iv_tbl, each_ivar, (st_data_t)gen);
-        yajl_gen_map_close(gen);
+        json_gen_map_close(gen);
       }
       break;
 
     case T_ARRAY:
-      yajl_gen_cstr(gen, "array");
+      json_gen_cstr(gen, "array");
       obj_dump_class(gen, obj);
 
       struct RArray *ary = RARRAY(obj);
 
-      yajl_gen_cstr(gen, "length");
-      yajl_gen_integer(gen, ary->len);
+      json_gen_cstr(gen, "length");
+      json_gen_integer(gen, ary->len);
 
       if (FL_TEST(obj, ELTS_SHARED)) {
-        yajl_gen_cstr(gen, "shared");
-        yajl_gen_value(gen, ary->aux.shared);
+        json_gen_cstr(gen, "shared");
+        json_gen_value(gen, ary->aux.shared);
       } else if (ary->len) {
-        yajl_gen_cstr(gen, "data");
-        yajl_gen_array_open(gen);
+        json_gen_cstr(gen, "data");
+        json_gen_array_open(gen);
         int i;
         for(i=0; i < ary->len; i++)
-          yajl_gen_value(gen, ary->ptr[i]);
-        yajl_gen_array_close(gen);
+          json_gen_value(gen, ary->ptr[i]);
+        json_gen_array_close(gen);
       }
       break;
 
     case T_HASH:
-      yajl_gen_cstr(gen, "hash");
+      json_gen_cstr(gen, "hash");
       obj_dump_class(gen, obj);
 
       struct RHash *hash = RHASH(obj);
 
-      yajl_gen_cstr(gen, "length");
+      json_gen_cstr(gen, "length");
       if (hash->tbl)
-        yajl_gen_integer(gen, hash->tbl->num_entries);
+        json_gen_integer(gen, hash->tbl->num_entries);
       else
-        yajl_gen_integer(gen, 0);
+        json_gen_integer(gen, 0);
 
-      yajl_gen_cstr(gen, "default");
-      yajl_gen_value(gen, hash->ifnone);
+      json_gen_cstr(gen, "default");
+      json_gen_value(gen, hash->ifnone);
 
       if (hash->tbl && hash->tbl->num_entries) {
-        yajl_gen_cstr(gen, "data");
-        //yajl_gen_map_open(gen);
-        yajl_gen_array_open(gen);
+        json_gen_cstr(gen, "data");
+        //json_gen_map_open(gen);
+        json_gen_array_open(gen);
         st_foreach(hash->tbl, each_hash_entry, (st_data_t)gen);
-        yajl_gen_array_close(gen);
-        //yajl_gen_map_close(gen);
+        json_gen_array_close(gen);
+        //json_gen_map_close(gen);
       }
       break;
 
     default:
-      yajl_gen_cstr(gen, "unknown");
+      json_gen_cstr(gen, "unknown");
       obj_dump_class(gen, obj);
   }
 
-  yajl_gen_cstr(gen, "code");
-  yajl_gen_integer(gen, BUILTIN_TYPE(obj));
+  json_gen_cstr(gen, "code");
+  json_gen_integer(gen, BUILTIN_TYPE(obj));
 
-  yajl_gen_map_close(gen);
+  json_gen_map_close(gen);
 }
 
 extern st_table *rb_global_tbl;
@@ -1401,89 +1401,89 @@ extern st_table *rb_global_tbl;
 static int
 globals_each_dump(st_data_t key, st_data_t record, st_data_t arg)
 {
-  yajl_gen_id((yajl_gen)arg, (ID)key);
-  yajl_gen_value((yajl_gen)arg, rb_gvar_get((void*)record));
+  json_gen_id((json_gen)arg, (ID)key);
+  json_gen_value((json_gen)arg, rb_gvar_get((void*)record));
   return ST_CONTINUE;
 }
 
 static int
 finalizers_each_dump(st_data_t key, st_data_t val, st_data_t arg)
 {
-  yajl_gen gen = (yajl_gen)arg;
-  yajl_gen_array_open(gen);
-  yajl_gen_value(gen, (VALUE)key);
-  yajl_gen_value(gen, (VALUE)val);
-  yajl_gen_array_close(gen);
+  json_gen gen = (json_gen)arg;
+  json_gen_array_open(gen);
+  json_gen_value(gen, (VALUE)key);
+  json_gen_value(gen, (VALUE)val);
+  json_gen_array_close(gen);
   return ST_CONTINUE;
 }
 
 static void
-memprof_dump_globals(yajl_gen gen)
+memprof_dump_globals(json_gen gen)
 {
-  yajl_gen_map_open(gen);
+  json_gen_map_open(gen);
 
-  yajl_gen_cstr(gen, "_id");
-  yajl_gen_cstr(gen, "globals");
+  json_gen_cstr(gen, "_id");
+  json_gen_cstr(gen, "globals");
 
-  yajl_gen_cstr(gen, "type");
-  yajl_gen_cstr(gen, "globals");
+  json_gen_cstr(gen, "type");
+  json_gen_cstr(gen, "globals");
 
-  yajl_gen_cstr(gen, "variables");
+  json_gen_cstr(gen, "variables");
 
-  yajl_gen_map_open(gen);
+  json_gen_map_open(gen);
   st_foreach(rb_global_tbl, globals_each_dump, (st_data_t)gen);
-  yajl_gen_map_close(gen);
+  json_gen_map_close(gen);
 
-  yajl_gen_map_close(gen);
-  yajl_gen_reset(gen);
+  json_gen_map_close(gen);
+  json_gen_reset(gen);
 }
 
 static void
-memprof_dump_stack_frame(yajl_gen gen, struct FRAME *frame)
+memprof_dump_stack_frame(json_gen gen, struct FRAME *frame)
 {
-  yajl_gen_map_open(gen);
+  json_gen_map_open(gen);
 
-  yajl_gen_cstr(gen, "_id");
-  yajl_gen_pointer(gen, frame);
+  json_gen_cstr(gen, "_id");
+  json_gen_pointer(gen, frame);
 
-  yajl_gen_cstr(gen, "type");
-  yajl_gen_cstr(gen, "frame");
+  json_gen_cstr(gen, "type");
+  json_gen_cstr(gen, "frame");
 
-  yajl_gen_cstr(gen, "self");
-  yajl_gen_value(gen, frame->self);
+  json_gen_cstr(gen, "self");
+  json_gen_value(gen, frame->self);
 
   if (frame->last_class) {
-    yajl_gen_cstr(gen, "last_class");
-    yajl_gen_value(gen, frame->last_class);
+    json_gen_cstr(gen, "last_class");
+    json_gen_value(gen, frame->last_class);
   }
 
   if (frame->orig_func) {
-    yajl_gen_cstr(gen, "orig_func");
-    yajl_gen_id(gen, frame->orig_func);
+    json_gen_cstr(gen, "orig_func");
+    json_gen_id(gen, frame->orig_func);
   }
 
   if (frame->last_func && frame->last_func != frame->orig_func) {
-    yajl_gen_cstr(gen, "last_func");
-    yajl_gen_id(gen, frame->last_func);
+    json_gen_cstr(gen, "last_func");
+    json_gen_id(gen, frame->last_func);
   }
 
   if (frame->node) {
-    yajl_gen_cstr(gen, "node");
-    yajl_gen_pointer(gen, (void*)frame->node);
+    json_gen_cstr(gen, "node");
+    json_gen_pointer(gen, (void*)frame->node);
   }
 
   if (frame->prev) {
-    yajl_gen_cstr(gen, "prev");
-    yajl_gen_pointer(gen, (void*)frame->prev);
+    json_gen_cstr(gen, "prev");
+    json_gen_pointer(gen, (void*)frame->prev);
   }
 
   if (frame->tmp) {
-    yajl_gen_cstr(gen, "tmp");
-    yajl_gen_pointer(gen, (void*)frame->tmp);
+    json_gen_cstr(gen, "tmp");
+    json_gen_pointer(gen, (void*)frame->tmp);
   }
 
-  yajl_gen_map_close(gen);
-  yajl_gen_reset(gen);
+  json_gen_map_close(gen);
+  json_gen_reset(gen);
 
   if (frame->prev) {
     memprof_dump_stack_frame(gen, frame->prev);
@@ -1491,13 +1491,13 @@ memprof_dump_stack_frame(yajl_gen gen, struct FRAME *frame)
 }
 
 static void
-memprof_dump_stack(yajl_gen gen)
+memprof_dump_stack(json_gen gen)
 {
   memprof_dump_stack_frame(gen, ruby_frame);
 }
 
 static void
-memprof_dump_lsof(yajl_gen gen)
+memprof_dump_lsof(json_gen gen)
 {
   VALUE cmd = rb_str_new2("lsof -np ");
   VALUE pid = rb_funcall(rb_mProcess, rb_intern("pid"), 0);
@@ -1511,31 +1511,31 @@ memprof_dump_lsof(yajl_gen gen)
     for (i=1; i < RARRAY_LEN(lines); i++) {
       VALUE parts = rb_funcall(RARRAY_PTR(lines)[i], rb_intern("split"), 2, Qnil, INT2FIX(9));
 
-      yajl_gen_map_open(gen);
+      json_gen_map_open(gen);
 
-      yajl_gen_cstr(gen, "_id");
-      yajl_gen_format(gen, "lsof:%d", i);
+      json_gen_cstr(gen, "_id");
+      json_gen_format(gen, "lsof:%d", i);
 
-      yajl_gen_cstr(gen, "type");
-      yajl_gen_cstr(gen, "lsof");
+      json_gen_cstr(gen, "type");
+      json_gen_cstr(gen, "lsof");
 
-      yajl_gen_cstr(gen, "fd");
-      yajl_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[3]));
+      json_gen_cstr(gen, "fd");
+      json_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[3]));
 
-      yajl_gen_cstr(gen, "fd_type");
-      yajl_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[4]));
+      json_gen_cstr(gen, "fd_type");
+      json_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[4]));
 
-      yajl_gen_cstr(gen, "fd_name");
-      yajl_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[RARRAY_LEN(parts)-1]));
+      json_gen_cstr(gen, "fd_name");
+      json_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[RARRAY_LEN(parts)-1]));
 
-      yajl_gen_map_close(gen);
-      yajl_gen_reset(gen);
+      json_gen_map_close(gen);
+      json_gen_reset(gen);
     }
   }
 }
 
 static void
-memprof_dump_ps(yajl_gen gen)
+memprof_dump_ps(json_gen gen)
 {
   VALUE cmd = rb_str_new2("ps -o rss,vsize -p ");
   VALUE pid = rb_funcall(rb_mProcess, rb_intern("pid"), 0);
@@ -1549,54 +1549,54 @@ memprof_dump_ps(yajl_gen gen)
     if (RARRAY_LEN(lines) == 2) {
       VALUE parts = rb_funcall(RARRAY_PTR(lines)[1], rb_intern("split"), 0);
 
-      yajl_gen_map_open(gen);
+      json_gen_map_open(gen);
 
-      yajl_gen_cstr(gen, "_id");
-      yajl_gen_cstr(gen, "ps");
+      json_gen_cstr(gen, "_id");
+      json_gen_cstr(gen, "ps");
 
-      yajl_gen_cstr(gen, "type");
-      yajl_gen_cstr(gen, "ps");
+      json_gen_cstr(gen, "type");
+      json_gen_cstr(gen, "ps");
 
-      yajl_gen_cstr(gen, "rss");
-      yajl_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[0]));
+      json_gen_cstr(gen, "rss");
+      json_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[0]));
 
-      yajl_gen_cstr(gen, "vsize");
-      yajl_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[1]));
+      json_gen_cstr(gen, "vsize");
+      json_gen_cstr(gen, RSTRING_PTR(RARRAY_PTR(parts)[1]));
 
-      yajl_gen_map_close(gen);
-      yajl_gen_reset(gen);
+      json_gen_map_close(gen);
+      json_gen_reset(gen);
     }
   }
 }
 
 static void
-memprof_dump_finalizers(yajl_gen gen)
+memprof_dump_finalizers(json_gen gen)
 {
   st_table *finalizer_table = *(st_table **)memprof_config.finalizer_table;
   if (finalizer_table) {
-    yajl_gen_map_open(gen);
+    json_gen_map_open(gen);
 
-    yajl_gen_cstr(gen, "_id");
-    yajl_gen_cstr(gen, "finalizers");
+    json_gen_cstr(gen, "_id");
+    json_gen_cstr(gen, "finalizers");
 
-    yajl_gen_cstr(gen, "type");
-    yajl_gen_cstr(gen, "finalizers");
+    json_gen_cstr(gen, "type");
+    json_gen_cstr(gen, "finalizers");
 
-    yajl_gen_cstr(gen, "data");
-    yajl_gen_array_open(gen);
+    json_gen_cstr(gen, "data");
+    json_gen_array_open(gen);
     st_foreach(finalizer_table, finalizers_each_dump, (st_data_t)gen);
-    yajl_gen_array_close(gen);
+    json_gen_array_close(gen);
 
-    yajl_gen_map_close(gen);
-    yajl_gen_reset(gen);
+    json_gen_map_close(gen);
+    json_gen_reset(gen);
   }
 }
 
 static int
 objs_each_dump(st_data_t key, st_data_t record, st_data_t arg)
 {
-  obj_dump((VALUE)key, (yajl_gen)arg);
-  yajl_gen_reset((yajl_gen)arg);
+  obj_dump((VALUE)key, (json_gen)arg);
+  json_gen_reset((json_gen)arg);
   return ST_CONTINUE;
 }
 
@@ -1614,7 +1614,7 @@ memprof_dump(int argc, VALUE *argv, VALUE self)
 
   track_objs = 0;
 
-  yajl_gen gen = json_for_args(argc, argv);
+  json_gen gen = json_for_args(argc, argv);
   st_foreach(objs, objs_each_dump, (st_data_t)gen);
   json_free(gen);
 
@@ -1660,8 +1660,8 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
       rb_raise(rb_eArgError, "unable to open output file");
   }
 
-  yajl_gen_config conf = { .beautify = 0, .indentString = "  " };
-  yajl_gen gen = yajl_gen_alloc2((yajl_print_t)&json_print, &conf, NULL, (void*)out);
+  json_gen_config conf = { .beautify = 0, .indentString = "  " };
+  json_gen gen = json_gen_alloc2((json_print_t)&json_print, &conf, NULL, (void*)out);
 
   track_objs = 0;
 
@@ -1677,7 +1677,7 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
     while (p < pend) {
       if (RBASIC(p)->flags) {
         obj_dump((VALUE)p, gen);
-        yajl_gen_reset(gen);
+        json_gen_reset(gen);
       }
 
       p += memprof_config.sizeof_RVALUE;
@@ -1687,8 +1687,8 @@ memprof_dump_all(int argc, VALUE *argv, VALUE self)
   memprof_dump_lsof(gen);
   memprof_dump_ps(gen);
 
-  yajl_gen_clear(gen);
-  yajl_gen_free(gen);
+  json_gen_clear(gen);
+  json_gen_free(gen);
 
   if (out) {
     fclose(out);
