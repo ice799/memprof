@@ -76,7 +76,7 @@ realloc_tramp(void *ptr, size_t size)
 
   stats.realloc_bytes_requested += size;
   stats.realloc_calls++;
-  stats.realloc_bytes_actual += malloc_usable_size(ptr);
+  stats.realloc_bytes_actual += malloc_usable_size(ret);
 
   errno = err;
   return ret;
