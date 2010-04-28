@@ -974,8 +974,8 @@ find_debug_syms(struct elf_info *elf)
   dbg_printf(".gnu_debuglink base file name: %s, crc: %lx\n", basename, crc);
 
   dir = dirname(tmp);
-  debug_file = malloc(strlen(DEBUGDIR) + strlen(dir) +
-                      strlen("/") + strlen(basename) + 1);
+  debug_file = calloc(1, strlen(DEBUGDIR) + strlen(dir) +
+                         strlen("/") + strlen(basename) + 1);
 
   strncat(debug_file, DEBUGDIR, strlen(DEBUGDIR));
   strncat(debug_file, dir, strlen(dir));
