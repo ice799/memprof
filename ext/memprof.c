@@ -345,7 +345,7 @@ json_print(void *ctx, const char * str, unsigned int len)
     written += fwrite(str + written, sizeof(char), len - written, out ? out : stdout);
     if (written == len) break;
   }
-  if (str[0] == '\n' && out)
+  if (str && len > 0 && str[0] == '\n' && out)
     fflush(out);
 }
 
