@@ -36,9 +36,6 @@ trace_set_output(json_gen gen);
 json_gen
 trace_get_output();
 
-double
-trace_get_time();
-
 /* for now, these will live here */
 extern void install_malloc_tracer();
 extern void install_gc_tracer();

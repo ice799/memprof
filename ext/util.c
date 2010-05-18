@@ -1,10 +1,13 @@
+#include <stdlib.h>
+#include <time.h>
+#include <util.h>
+
+#include <sys/time.h>
+
 /* This is the CRC function used by GNU. Stripped executables may contain a
  * section .gnu_debuglink which holds the name of an elf object with debug
  * information and a checksum.
- */
-#include <stdlib.h>
-#include <util.h>
-/*   !!!! DO NOT MODIFY THIS FUNCTION !!!!
+ *   !!!! DO NOT MODIFY THIS FUNCTION !!!!
  *   TODO create specs for this!
  */
 unsigned long
@@ -70,4 +73,19 @@ gnu_debuglink_crc32(unsigned long crc, unsigned char *buf, size_t len)
   for (end = buf + len; buf < end; ++buf)
     crc = crc32_table[(crc ^ *buf) & 0xff] ^ (crc >> 8);
   return ~crc & 0xffffffff;
+}
+
+double
+timeofday()
+{
+  struct timeval tv;
+#ifdef CLOCK_MONOTONIC
+  struct timespec tp;
+
+  if (clock_gettime(CLOCK_MONOTONIC, &tp) == 0) {
+    return (double)tp.tv_sec + (double)tp.tv_nsec * 1e-9;
+  }
+#endif
+  gettimeofday(&tv, NULL);
+  return (double)tv.tv_sec + (double)tv.tv_usec * 1e-6;
 }

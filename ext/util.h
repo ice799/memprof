@@ -73,4 +73,9 @@ struct memprof_config {
 unsigned long
 gnu_debuglink_crc32 (unsigned long crc, unsigned char *buf, size_t len);
 
+/* Use this function for time tracking. It will (interally) try to use an
+ * appropriately granual timing function.
+ */
+double
+timeofday();
 #endif

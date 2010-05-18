@@ -42,10 +42,10 @@ read_tramp(int fildes, void *buf, size_t nbyte) {
   int err;
   ssize_t ret;
 
-  secs = trace_get_time();
+  secs = timeofday();
   ret = read(fildes, buf, nbyte);
   err = errno;
-  secs = trace_get_time() - secs;
+  secs = timeofday() - secs;
 
   stats.read_time += secs;
   stats.read_calls++;
@@ -63,10 +63,10 @@ write_tramp(int fildes, const void *buf, size_t nbyte) {
   int err;
   ssize_t ret;
 
-  secs = trace_get_time();
+  secs = timeofday();
   ret = write(fildes, buf, nbyte);
   err = errno;
-  secs = trace_get_time() - secs;
+  secs = timeofday() - secs;
 
   stats.write_time += secs;
   stats.write_calls++;
@@ -83,10 +83,10 @@ connect_tramp(int socket, const struct sockaddr *address, socklen_t address_len)
   double secs = 0;
   int err, ret;
 
-  secs = trace_get_time();
+  secs = timeofday();
   ret = connect(socket, address, address_len);
   err = errno;
-  secs = trace_get_time() - secs;
+  secs = timeofday() - secs;
 
   stats.connect_time += secs;
   stats.connect_calls++;
@@ -101,10 +101,10 @@ select_tramp(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds, stru
   double secs = 0;
   int ret, err;
 
-  secs = trace_get_time();
+  secs = timeofday();
   ret = select(nfds, readfds, writefds, errorfds, timeout);
   err = errno;
-  secs = trace_get_time() - secs;
+  secs = timeofday() - secs;
 
   stats.select_time += secs;
   stats.select_calls++;

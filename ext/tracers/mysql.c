@@ -26,9 +26,9 @@ real_query_tramp(void *mysql, const char *stmt_str, unsigned long length) {
   double secs = 0;
   int ret;
 
-  secs = trace_get_time();
+  secs = timeofday();
   ret = orig_real_query(mysql, stmt_str, length);
-  secs = trace_get_time() - secs;
+  secs = timeofday() - secs;
 
   stats.query_time += secs;
   stats.query_calls++;

@@ -13,7 +13,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sysexits.h>
-#include <time.h>
 
 #include <st.h>
 #include <intern.h>
@@ -36,21 +35,6 @@ static st_table *objs = NULL;
 /*
  * stuff needed for heap dumping
  */
-static double
-rb_timeofday()
-{
-  struct timeval tv;
-#ifdef CLOCK_MONOTONIC
-  struct timespec tp;
-
-  if (clock_gettime(CLOCK_MONOTONIC, &tp) == 0) {
-    return (double)tp.tv_sec + (double)tp.tv_nsec * 1e-9;
-  }
-#endif
-  gettimeofday(&tv, NULL);
-  return (double)tv.tv_sec + (double)tv.tv_usec * 1e-6;
-}
-
 static VALUE (*rb_classname)(VALUE);
 static RUBY_DATA_FUNC *rb_bm_mark;
 static RUBY_DATA_FUNC *rb_blk_free;
@@ -494,9 +478,9 @@ memprof_trace_request(VALUE self, VALUE env)
   trace_invoke_all(TRACE_RESET);
   trace_invoke_all(TRACE_START);
 
-  secs = trace_get_time();
+  secs = timeofday();
   VALUE ret = rb_yield(Qnil);
-  secs = trace_get_time() - secs;
+  secs = timeofday() - secs;
 
   trace_invoke_all(TRACE_DUMP);
   trace_invoke_all(TRACE_STOP);
@@ -917,7 +901,7 @@ obj_dump(VALUE obj, json_gen gen)
             if (th->delay == DELAY_INFTY)
               json_gen_cstr(gen, "infinity");
             else
-              json_gen_double(gen, th->delay - rb_timeofday());
+              json_gen_double(gen, th->delay - timeofday());
           }
 
           if (th->wait_for & WAIT_JOIN) {

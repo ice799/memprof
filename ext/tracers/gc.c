@@ -25,9 +25,9 @@ gc_tramp()
 {
   double secs = 0;
 
-  secs = trace_get_time();
+  secs = timeofday();
   orig_garbage_collect();
-  secs = trace_get_time() - secs;
+  secs = timeofday() - secs;
 
   stats.gc_time += secs;
   stats.gc_calls++;
