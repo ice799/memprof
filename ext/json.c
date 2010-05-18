@@ -2,11 +2,12 @@
 #define _GNU_SOURCE
 #endif
 
-#include "json.h"
 #include <assert.h>
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+#include "json.h"
 
 void
 json_gen_reset(json_gen gen)
