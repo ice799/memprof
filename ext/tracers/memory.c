@@ -42,7 +42,9 @@ malloc_tramp(size_t size)
 
   stats.malloc_bytes_requested += size;
   stats.malloc_calls++;
-  stats.malloc_bytes_actual += malloc_usable_size(ret);
+
+  if (ret)
+    stats.malloc_bytes_actual += malloc_usable_size(ret);
 
   errno = err;
   return ret;
@@ -59,7 +61,9 @@ calloc_tramp(size_t nmemb, size_t size)
 
   stats.calloc_bytes_requested += (nmemb * size);
   stats.calloc_calls++;
-  stats.calloc_bytes_actual += malloc_usable_size(ret);
+
+  if (ret)
+    stats.calloc_bytes_actual += malloc_usable_size(ret);
 
   errno = err;
   return ret;
@@ -76,7 +80,9 @@ realloc_tramp(void *ptr, size_t size)
 
   stats.realloc_bytes_requested += size;
   stats.realloc_calls++;
-  stats.realloc_bytes_actual += malloc_usable_size(ret);
+
+  if (ret)
+    stats.realloc_bytes_actual += malloc_usable_size(ret);
 
   errno = err;
   return ret;
@@ -85,7 +91,9 @@ realloc_tramp(void *ptr, size_t size)
 static void
 free_tramp(void *ptr)
 {
-  stats.free_bytes_actual += malloc_usable_size(ptr);
+  if (ptr)
+    stats.free_bytes_actual += malloc_usable_size(ptr);
+
   stats.free_calls++;
 
   free(ptr);
