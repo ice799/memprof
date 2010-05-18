@@ -562,32 +562,7 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig
   /* first check if the symbol is in the PLT */
   trampee_addr = find_plt_addr(trampee, NULL);
 
-  /* it isn't in the PLT, try to find it in the binary itself */
-  if (!trampee_addr) {
-    dbg_printf("Couldn't find %s in the PLT...\n", trampee);
-    unsigned char *byte = ruby_info->text_segment;
-    trampee_addr = bin_find_symbol(trampee, NULL, 0);
-    size_t count = 0;
-    int num = 0;
-
-    assert(byte != NULL);
-
-    if (!trampee_addr) {
-      dbg_printf("WARNING: Couldn't find: %s anywhere, so not tramping!\n", trampee);
-      return 0;
-    }
-
-    if (orig_func) {
-      *orig_func = trampee_addr;
-    }
-
-    for(; count < ruby_info->text_segment_len; byte++, count++) {
-      if (arch_insert_st1_tramp(byte, trampee_addr, tramp) == 0) {
-        num++;
-      }
-    }
-    dbg_printf("Inserted %d tramps for: %s\n", num, trampee);
-  } else {
+  if (trampee_addr) {
     void *ret = NULL;
     dbg_printf("Found %s in the PLT, inserting tramp...\n", trampee);
     ret = overwrite_got(trampee_addr, tramp->addr);
@@ -597,6 +572,29 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig
     if (orig_func) {
       *orig_func = ret;
       dbg_printf("setting orig function: %p\n", *orig_func);
+    }
+  } else {
+    trampee_addr = bin_find_symbol(trampee, NULL, 0);
+    dbg_printf("Couldn't find %s in the PLT...\n", trampee);
+
+    if (trampee_addr) {
+      unsigned char *byte = ruby_info->text_segment;
+      size_t count = 0;
+      int num = 0;
+
+      assert(byte != NULL);
+
+      if (orig_func) {
+        *orig_func = trampee_addr;
+      }
+
+      for(; count < ruby_info->text_segment_len; byte++, count++) {
+        if (arch_insert_st1_tramp(byte, trampee_addr, tramp) == 0) {
+          num++;
+        }
+      }
+
+      dbg_printf("Inserted %d tramps for: %s\n", num, trampee);
     }
   }
 
@@ -976,8 +974,8 @@ find_debug_syms(struct elf_info *elf)
   dbg_printf(".gnu_debuglink base file name: %s, crc: %lx\n", basename, crc);
 
   dir = dirname(tmp);
-  debug_file = malloc(strlen(DEBUGDIR) + strlen(dir) +
-                      strlen("/") + strlen(basename) + 1);
+  debug_file = calloc(1, strlen(DEBUGDIR) + strlen(dir) +
+                         strlen("/") + strlen(basename) + 1);
 
   strncat(debug_file, DEBUGDIR, strlen(DEBUGDIR));
   strncat(debug_file, dir, strlen(dir));

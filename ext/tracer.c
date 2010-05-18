@@ -1,9 +1,15 @@
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
+#include <time.h>
 
+#include "json.h"
 #include "tracer.h"
 #include "util.h"
+
+static json_gen tracing_json_gen = NULL;
 
 /*
    XXX if we ever need a linked list for anything else ever, remove this crap
@@ -38,7 +44,6 @@ trace_remove(const char *id)
   while (tmp) {
     if (strcmp(id, tmp->tracer->id) == 0) {
       tmp->next = tmp->next;
-      free(tmp->tracer->id);
       free(tmp->tracer);
       free(tmp);
       return 0;
@@ -64,7 +69,10 @@ do_trace_invoke(struct tracer *trace, trace_fn fn)
       trace->reset();
       break;
     case TRACE_DUMP:
-      trace->dump();
+      json_gen_cstr(tracing_json_gen, trace->id);
+      json_gen_map_open(tracing_json_gen);
+      trace->dump(tracing_json_gen);
+      json_gen_map_close(tracing_json_gen);
       break;
     default:
       dbg_printf("invoked a non-existant trace function type: %d", fn);
@@ -96,4 +104,31 @@ trace_invoke(const char *id, trace_fn fn)
     tmp = tmp->next;
   }
   return 0;
+}
+
+void
+trace_set_output(json_gen gen)
+{
+  tracing_json_gen = gen;
+}
+
+json_gen
+trace_get_output()
+{
+  return tracing_json_gen;
+}
+
+double
+trace_get_time()
+{
+  struct timeval tv;
+#ifdef CLOCK_MONOTONIC
+  struct timespec tp;
+
+  if (clock_gettime(CLOCK_MONOTONIC, &tp) == 0) {
+    return (double)tp.tv_sec + (double)tp.tv_nsec * 1e-9;
+  }
+#endif
+  gettimeofday(&tv, NULL);
+  return (double)tv.tv_sec + (double)tv.tv_usec * 1e-6;
 }

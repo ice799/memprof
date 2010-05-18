@@ -1,12 +1,15 @@
 #if defined(HAVE_MACH)
 
-#include "bin_api.h"
 #include "arch.h"
+#include "bin_api.h"
+#include "mmap.h"
 #include "util.h"
 
 #include <assert.h>
 #include <dlfcn.h>
 #include <err.h>
+#include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,16 +23,34 @@
 #include <mach-o/loader.h>
 #include <mach-o/ldsyms.h>
 #include <mach-o/nlist.h>
+#include <mach-o/dyld_images.h>
+#include <mach-o/fat.h>
 
 struct mach_config {
-  const struct nlist_64 **symbol_table;
+  const struct mach_header *hdr;
+  const struct nlist_64 *symbol_table;
+  const struct nlist_64 **sorted_symbol_table;
+  const struct section_64 *symstub_sect;
   const char *string_table;
   uint32_t symbol_count;
   uint32_t string_table_size;
   intptr_t image_offset;
+  const struct mach_header* load_addr;
+  uint32_t nindirectsyms;
+  uint32_t indirectsymoff;
+  struct mmap_info file;
+  const char *filename;
+  unsigned int index;
 };
 
-static struct mach_config mach_config;
+struct symbol_data {
+  const char *name;
+  void *address;
+  uint32_t size;
+  uint32_t index;
+};
+
+static struct mach_config ruby_img_cfg;
 extern struct memprof_config memprof_config;
 
 /*
@@ -46,7 +67,7 @@ extern struct memprof_config memprof_config;
 
 struct dyld_stub_entry {
   unsigned char jmp[2];
-  uint32_t offset;
+  int32_t offset;
 } __attribute((__packed__));
 
 /* Return the jmp target of a stub entry */
@@ -64,7 +85,60 @@ get_dyld_stub_target(struct dyld_stub_entry *entry) {
 
 static inline void
 set_dyld_stub_target(struct dyld_stub_entry *entry, void *addr) {
-  *((void**)((void*)(entry + 1) + entry->offset)) = addr;
+  void *target = (void *)(entry+1) + entry->offset;
+  copy_instructions(target, &addr, sizeof(void *));
+}
+
+static inline const char*
+get_symtab_string(struct mach_config *img_cfg, uint32_t stroff);
+
+static void
+extract_symbol_data(struct mach_config *img_cfg, struct symbol_data *sym_data);
+
+static int
+find_dyld_image_index(const struct mach_header_64 *hdr);
+
+static void *
+find_stub_addr(const char *symname, struct mach_config *img_cfg)
+{
+  uint64_t i = 0, nsyms = 0;
+  uint32_t symindex = 0;
+  assert(img_cfg && symname);
+  const struct section_64 *sect = img_cfg->symstub_sect;
+
+  if (!sect)
+    return NULL;
+
+  nsyms = sect->size / sect->reserved2;
+
+  for (; i < nsyms; i ++) {
+    uint32_t currsym = sect->reserved1 + i;
+    uint64_t stubaddr = sect->offset + (i * sect->reserved2);
+    uint32_t symoff = 0;
+
+    assert(currsym <= img_cfg->nindirectsyms);
+
+    /* indirect sym entries are just 32bit indexes into the symbol table to the
+     * symbol the stub is referring to.
+     */
+    symoff = img_cfg->indirectsymoff + (i * 4);
+    memcpy(&symindex, (char*)img_cfg->hdr + symoff, 4);
+    symindex = symindex & ((uint32_t) ~(INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS));
+
+    const struct nlist_64 *ent = img_cfg->symbol_table + symindex;
+    const char *string = get_symtab_string(img_cfg, ent->n_un.n_strx);
+
+    if (strcmp(symname, string+1) == 0) {
+      if (stubaddr) {
+        dbg_printf("address of stub in %s for %s is %" PRIx64 " + %" PRIx64 " = ", img_cfg->filename, string, stubaddr, img_cfg->load_addr);
+        stubaddr = (uint64_t)img_cfg->load_addr + stubaddr;
+        dbg_printf("%" PRIdx4 "\n", stubaddr);
+        return (void *)stubaddr;
+      }
+    }
+  }
+  dbg_printf("couldn't find address of stub: %s in %s\n", symname, img_cfg->filename);
+  return NULL;
 }
 
 /*
@@ -91,31 +165,83 @@ update_dyld_stub_table(void *table, uint64_t len, void *trampee_addr, struct tra
 }
 
 /*
- * This function tells us if the passed stub table address
- * is something that we should try to update (by looking at it's filename)
- * Only try to update dyld stub entries in files that match "libruby.dylib" or "*.bundle" (other C gems)
+ * Get all DSOs
+ */
+static const struct dyld_all_image_infos *
+dyld_get_all_images() {
+  static const struct dyld_all_image_infos* (*_dyld_get_all_image_infos)() = NULL;
+  static const struct dyld_all_image_infos *images = NULL;
+
+  if (!_dyld_get_all_image_infos) {
+    _dyld_lookup_and_bind("__dyld_get_all_image_infos", (void**)&_dyld_get_all_image_infos, NULL);
+    assert(_dyld_get_all_image_infos != NULL);
+  }
+
+  if (!images) {
+    images = _dyld_get_all_image_infos();
+    assert(images != NULL);
+  }
+
+  return images;
+}
+
+/*
+ * Get info for particular DSO
+ */
+static const struct dyld_image_info *
+dyld_get_image_info_for_index(int index) {
+  const struct dyld_all_image_infos *images = dyld_get_all_images();
+
+  // Stupid indexes into the infoArray don't match indexes used elsewhere, so we have to loop
+  unsigned int i;
+  const struct mach_header *hdr = _dyld_get_image_header(index);
+
+  for(i=0; i < _dyld_image_count(); i++) {
+    const struct dyld_image_info image = images->infoArray[i];
+    if (hdr == image.imageLoadAddress)
+      return &(images->infoArray[i]);
+  }
+
+  return NULL;
+}
+
+/*
+ * This function tells us if the passed header index is something
+ * that we should try to update (by looking at it's filename)
+ * Only try to update the running executable, or files that match
+ * "libruby.dylib" or "*.bundle" (other C gems)
  */
 
-static inline int
-should_update_stub_table(void *addr) {
-  Dl_info info;
+static const struct mach_header *
+should_update_image(int index) {
+  const struct mach_header *hdr = _dyld_get_image_header(index);
 
-  if (dladdr(addr, &info)) {
-    size_t len = strlen(info.dli_fname);
+  /* Don't update if it's the memprof bundle */
+  if ((void*)hdr == &_mh_bundle_header)
+    return NULL;
 
-    if (len >= 6) {
-      const char *possible_bundle = (info.dli_fname + len - 6);
-      if (strcmp(possible_bundle, "bundle") == 0)
-        return 1;
-    }
+  /* If it's the ruby executable, do it! */
+  if ((void*)hdr == &_mh_execute_header)
+    return hdr;
 
-    if (len >= 13) {
-      const char *possible_libruby = (info.dli_fname + len - 13);
-      if (strcmp(possible_libruby, "libruby.dylib") == 0)
-        return 1;
-    }
+  /* otherwise, check to see if its a bundle or libruby */
+  const struct dyld_image_info *image = dyld_get_image_info_for_index(index);
+
+  size_t len = strlen(image->imageFilePath);
+
+  if (len >= 6) {
+    const char *possible_bundle = (image->imageFilePath + len - 6);
+    if (strcmp(possible_bundle, "bundle") == 0)
+      return hdr;
   }
-  return 0;
+
+  if (len >= 13) {
+    const char *possible_libruby = (image->imageFilePath + len - 13);
+    if (strcmp(possible_libruby, "libruby.dylib") == 0)
+      return hdr;
+  }
+
+  return NULL;
 }
 
 /*
@@ -139,15 +265,12 @@ update_mach_section(const struct mach_header *header, const struct section_64 *s
   void *section = getsectdatafromheader_64((const struct mach_header_64*)header, "__TEXT", sect->sectname, &len) + slide;
 
   if (strncmp(sect->sectname, "__symbol_stub", 13) == 0) {
-    if (should_update_stub_table(section)) {
-      if (update_dyld_stub_table(section, sect->size, trampee_addr, tramp) == 0) {
-        ret = 0;
-      }
+    if (update_dyld_stub_table(section, sect->size, trampee_addr, tramp) == 0) {
+      ret = 0;
     }
     return ret;
   }
 
-  /* TODO: check the filename just like we do above for stub sections. No reason to look at unrelated files. */
   if (strcmp(sect->sectname, "__text") == 0) {
     size_t count = 0;
     for(; count < len; section++, count++) {
@@ -224,52 +347,6 @@ find_dyld_image_index(const struct mach_header_64 *hdr) {
 }
 
 /*
- * This function returns a buffer containing the file that is presumed
- * to be either the Ruby executable or libruby. (Wherever rb_newobj is found.)
- *
- * The passed pointer index is set to the dyld image index for the associated
- * in-process mach image.
- *
- * The reason that we read in the file is because the symbol table is not loaded
- * into memory with everything else at load time (at least not anywhere I can find).
- *
- * !!! The pointer returned by this function must be freed !!!
- */
-
-static void *
-get_ruby_file_and_header_index(int *index) {
-  void *ptr = NULL;
-  void *buf = NULL;
-  Dl_info info;
-  struct stat filestat;
-
-  // We can use this is a reasonably sure method of finding the file
-  // that the Ruby junk resides in.
-  ptr = dlsym(RTLD_DEFAULT, "rb_newobj");
-
-  if (!ptr)
-    errx(EX_SOFTWARE, "Could not find rb_newobj in this process. WTF???");
-
-  if (!dladdr(ptr, &info) || !info.dli_fname)
-    errx(EX_SOFTWARE, "Could not find the Mach object associated with rb_newobj.");
-
-  FILE *file = fopen(info.dli_fname, "r");
-  if (!file)
-    errx(EX_OSFILE, "Failed to open Ruby file %s", info.dli_fname);
-
-  stat(info.dli_fname, &filestat);
-  buf = malloc(filestat.st_size);
-
-  if (fread(buf, filestat.st_size, 1, file) != 1)
-    errx(EX_OSFILE, "Failed to fread() Ruby file %s", info.dli_fname);
-
-  fclose(file);
-
-  *index = find_dyld_image_index((const struct mach_header_64*) info.dli_fbase);
-  return buf;
-}
-
-/*
  * This function compares two nlist_64 structures by their n_value field (address, usually).
  * It is used by qsort in extract_symbol_table.
  */
@@ -298,15 +375,19 @@ nlist_cmp(const void *obj1, const void *obj2) {
  */
 
 static void
-extract_symbol_table(const struct mach_header_64 *hdr, const struct nlist_64 ***symbol_table, const char **string_table, uint32_t *symbol_count, uint32_t *strsize) {
+extract_symbol_table(const struct mach_header_64 *hdr, struct mach_config *img_cfg) {
   const struct nlist_64 **new_symtbl;
   char *new_strtbl;
   uint32_t i, j;
 
-  const char *lc = (const char*) hdr + sizeof(struct mach_header_64);
+  assert(hdr);
+  assert(img_cfg);
 
-  for (i = 0; i < hdr->ncmds; i++) {
-    if (((const struct load_command*)lc)->cmd == LC_SYMTAB) {
+  const struct load_command *lc = (const struct load_command *)(hdr + 1);
+
+  for (i = 0; i < hdr->ncmds; i++, (lc = (const struct load_command *)((char *)lc + lc->cmdsize))) {
+    if (lc->cmd == LC_SYMTAB) {
+      // dbg_printf("found an LC_SYMTAB load command.\n");
       const struct symtab_command *sc = (const struct symtab_command*) lc;
       const struct nlist_64 *file_symtbl = (const struct nlist_64*)((const char*)hdr + sc->symoff);
 
@@ -320,16 +401,49 @@ extract_symbol_table(const struct mach_header_64 *hdr, const struct nlist_64 ***
 
       qsort(new_symtbl, sc->nsyms, sizeof(struct nlist_64*), &nlist_cmp);
 
-      *symbol_table = new_symtbl;
-      *string_table = new_strtbl;
-      *symbol_count = sc->nsyms;
-      *strsize = sc->strsize;
-      return;
-    }
+      img_cfg->symbol_table = file_symtbl;
+      img_cfg->sorted_symbol_table = new_symtbl;
+      img_cfg->symbol_count = sc->nsyms;
 
-    lc += ((const struct load_command*)lc)->cmdsize;
+      img_cfg->string_table = new_strtbl;
+      img_cfg->string_table_size = sc->strsize;
+
+    } else if (lc->cmd == LC_DYSYMTAB) {
+      // dbg_printf("found an LC_DYSYMTAB load command.\n");
+      const struct dysymtab_command *dynsym = (const struct dysymtab_command *) lc;
+      img_cfg->nindirectsyms = dynsym->nindirectsyms;
+      img_cfg->indirectsymoff = dynsym->indirectsymoff;
+
+    } else if (lc->cmd == LC_SEGMENT_64) {
+      // dbg_printf("found an LC_SEGMENT_64 load command.\n");
+      const struct segment_command_64 *seg = (const struct segment_command_64 *) lc;
+      uint32_t i = 0;
+      const struct section_64 *asect = (const struct section_64 *)(seg + 1);
+      for(; i < seg->nsects; i++, asect++) {
+        /*
+         * setting up data to find the indirect symbol tables.
+         */
+
+        /* if this section hsa no symbol stubs, then we don't care about it */
+        if ((asect->flags & SECTION_TYPE) != S_SYMBOL_STUBS)
+          continue;
+
+        if (asect->reserved2 == 0) {
+          dbg_printf("!!! Found an LC_SEGMET_64 which was marked as having stubs,"
+              " but does not have reserved2 set!! %16s.%16s (skipping)\n", asect->segname, asect->sectname);
+          continue;
+        }
+
+        // dbg_printf("Found a section with symbol stubs: %16s.%16s.\n", asect->segname, asect->sectname);
+        img_cfg->symstub_sect = asect;
+      }
+
+    } else {
+      // dbg_printf("found another load command that is not being tracked: %" PRId32 "\n", lc->cmd);
+    }
   }
-  errx(EX_SOFTWARE, "Unable to find LC_SYMTAB");
+
+  assert(img_cfg->symbol_table && img_cfg->string_table);
 }
 
 /*
@@ -337,60 +451,174 @@ extract_symbol_table(const struct mach_header_64 *hdr, const struct nlist_64 ***
  */
 
 static inline const char*
-get_symtab_string(uint32_t stroff) {
-  assert(mach_config.string_table != NULL);
-  assert(stroff < mach_config.string_table_size);
-  return mach_config.string_table + stroff;
+get_symtab_string(struct mach_config *img_cfg, uint32_t stroff) {
+  assert(img_cfg);
+  assert(img_cfg->string_table != NULL);
+  assert(stroff < img_cfg->string_table_size);
+  return img_cfg->string_table + stroff;
 }
 
 /*
- * Return the address and size of a symbol given it's name
+ * Lookup the address, size, and symbol table index of a symbol given a symbol_data
+ * If sym_data is passed with the name set, this function will attempt to fill
+ * in the address, etc. If it is passed with the address set, it will attempt
+ * to fill in the name.
  */
 
-void *
-bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
-  void *ptr = NULL;
+static void
+extract_symbol_data(struct mach_config *img_cfg, struct symbol_data *sym_data)
+{
   uint32_t i, j;
 
-  assert(mach_config.symbol_table != NULL);
-  assert(mach_config.symbol_count > 0);
+  assert(img_cfg->symbol_table != NULL);
+  assert(img_cfg->symbol_count > 0);
 
-  for (i=0; i < mach_config.symbol_count; i++) {
-    const struct nlist_64 *nlist_entry = mach_config.symbol_table[i];
-    const char *string = get_symtab_string(nlist_entry->n_un.n_strx);
+  for (i=0; i < img_cfg->symbol_count; i++) {
+    // const struct nlist_64 *nlist_entry = img_cfg->sorted_symbol_table[i];
+    const struct nlist_64 *nlist_entry = img_cfg->symbol_table + i;
+    const char *string = NULL;
 
-    if (string && strcmp(symbol, string+1) == 0) {
-      const uint64_t addr = nlist_entry->n_value;
-      /* Add the slide to get the *real* address in the process. */
-      ptr = (void*)(addr + mach_config.image_offset);
+    string = get_symtab_string(img_cfg, nlist_entry->n_un.n_strx);
 
-      if (size) {
-        const struct nlist_64 *next_entry = NULL;
+    /* Add the slide to get the *real* address in the process. */
+    const uint64_t addr = nlist_entry->n_value;
+    void *ptr = (void*)(addr + img_cfg->image_offset);
 
-        /*
-         * There can be multiple entries in the symbol table with the same n_value (address).
-         * This means that the 'next' one isn't always good enough. We have to make sure it's
-         * really a different symbol.
-         */
-        j = 1;
-        while (next_entry == NULL) {
-          const struct nlist_64 *tmp_entry = mach_config.symbol_table[i + j];
-          if (nlist_entry->n_value != tmp_entry->n_value)
-            next_entry = tmp_entry;
-          j++;
-        }
+    /*
+     * If the user passes a name, match against the name
+     * If the user passes an address, match against that.
+     */
+    if ((sym_data->name && string && strcmp(sym_data->name, string+1) == 0) || (sym_data->address && ptr == sym_data->address)) {
+      if (!sym_data->address)
+        sym_data->address = ptr;
+      if (!sym_data->name)
+        sym_data->name = string+1;
 
-        /*
-         * Subtract our address from the address of the next symbol to get it's rough size.
-         * My observation is that the start of the next symbol will be padded to 16 byte alignment from the end of this one.
-         * This should be fine, since the point of getting the size is just to minimize scan area for tramp insertions.
-         */
-        *size = (next_entry->n_value - addr);
+      sym_data->index = i;
+
+      const struct nlist_64 *next_entry = NULL;
+
+      /*
+       * There can be multiple entries in the symbol table with the same n_value (address).
+       * This means that the 'next' one isn't always good enough. We have to make sure it's
+       * really a different symbol.
+       */
+      j = 1;
+      while (next_entry == NULL) {
+        const struct nlist_64 *tmp_entry = img_cfg->sorted_symbol_table[i + j];
+        if (nlist_entry->n_value != tmp_entry->n_value)
+          next_entry = tmp_entry;
+        j++;
       }
+
+      /*
+       * Subtract our address from the address of the next symbol to get it's rough size.
+       * My observation is that the start of the next symbol will be padded to 16 byte alignment from the end of this one.
+       * This should be fine, since the point of getting the size is just to minimize scan area for tramp insertions.
+       */
+      sym_data->size = (next_entry->n_value - addr);
       break;
     }
   }
-  return ptr;
+}
+
+static void
+free_mach_config(struct mach_config *cfg) {
+  if (cfg == &ruby_img_cfg)
+    return;
+
+  munmap_file(&cfg->file);
+  free(cfg);
+}
+
+static struct mach_config *
+mach_config_for_index(unsigned int index) {
+  if (index >= _dyld_image_count())
+    return NULL;
+
+  if (index == ruby_img_cfg.index)
+    return &ruby_img_cfg;
+
+  const struct dyld_image_info *image = dyld_get_image_info_for_index(index);
+  struct mach_config *cfg = calloc(1, sizeof(struct mach_config));
+
+  cfg->index = index;
+  cfg->file.name = cfg->filename = image->imageFilePath;
+  if (mmap_file_open(&cfg->file) < 0)
+    errx(EX_OSFILE, "Failed to fread() file %s", cfg->filename);
+  cfg->image_offset = _dyld_get_image_vmaddr_slide(index);
+  cfg->load_addr = image->imageLoadAddress;
+
+  struct mach_header_64 *hdr = (struct mach_header_64*) cfg->file.data;
+  assert(hdr);
+
+  if (hdr->magic == FAT_CIGAM) {
+    unsigned int j;
+    struct fat_header *fat = (struct fat_header *)hdr;
+
+    for(j=0; j < OSSwapInt32(fat->nfat_arch); j++) {
+      struct fat_arch *arch = (struct fat_arch *)((char*)fat + sizeof(struct fat_header) + sizeof(struct fat_arch) * j);
+
+      if (OSSwapInt32(arch->cputype) == CPU_TYPE_X86_64) {
+        hdr = (struct mach_header_64 *)(cfg->file.data + OSSwapInt32(arch->offset));
+        break;
+      }
+    }
+  }
+
+  if (hdr->magic != MH_MAGIC_64) {
+    printf("Magic for Ruby Mach-O file doesn't match\n");
+    munmap_file(&cfg->file);
+    free(cfg);
+    return NULL;
+  }
+
+  extract_symbol_table(hdr, cfg);
+  cfg->hdr = (const struct mach_header *)hdr;
+
+  return cfg;
+}
+
+void *
+bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
+  struct symbol_data sym_data;
+
+  memset(&sym_data, 0, sizeof(struct symbol_data));
+  sym_data.name = symbol;
+
+  extract_symbol_data(&ruby_img_cfg, &sym_data);
+
+  if (!sym_data.address && search_libs) {
+    int i, header_count = _dyld_image_count();
+
+    for (i=0; i < header_count; i++) {
+      const struct dyld_image_info *image = dyld_get_image_info_for_index(i);
+
+      if ((void*)image->imageLoadAddress == &_mh_bundle_header ||
+          (void*)image->imageLoadAddress == &_mh_execute_header)
+        continue;
+
+      struct mach_config *cfg = mach_config_for_index(i);
+      if (cfg) {
+        extract_symbol_data(cfg, &sym_data);
+
+        if (sym_data.address == image->imageLoadAddress) { // wtf? this happens for mysql_api.bundle with mysql_real_query
+          sym_data.address = 0;
+        } else if (sym_data.address) {
+          if (cfg->image_offset == 0) // another wtf? happens on libSystem.dylib where we need to add load address, but libmysqlclient.dylib etc are fine
+            sym_data.address = (char*)image->imageLoadAddress + (size_t)sym_data.address;
+          dbg_printf("found symbol %s in %s: %p\n", sym_data.name, image->imageFilePath, sym_data.address);
+          free_mach_config(cfg);
+          break;
+        }
+        free_mach_config(cfg);
+      }
+    }
+  }
+
+  if (size)
+    *size = sym_data.size;
+  return sym_data.address;
 }
 
 /*
@@ -398,27 +626,14 @@ bin_find_symbol(const char *symbol, size_t *size, int search_libs) {
  */
 const char *
 bin_find_symbol_name(void *symbol) {
-  const char *name = NULL;
-  uint32_t i;
+  struct symbol_data sym_data;
 
-  assert(mach_config.symbol_table != NULL);
-  assert(mach_config.symbol_count > 0);
+  memset(&sym_data, 0, sizeof(struct symbol_data));
+  sym_data.address = symbol;
 
-  for (i=0; i < mach_config.symbol_count; i++) {
-    const struct nlist_64 *nlist_entry = mach_config.symbol_table[i];
-    const char *string = get_symtab_string(nlist_entry->n_un.n_strx);
+  extract_symbol_data(&ruby_img_cfg, &sym_data);
 
-    const uint64_t addr = nlist_entry->n_value;
-    /* Add the slide to get the *real* address in the process. */
-    void *ptr = (void*)(addr + mach_config.image_offset);
-
-    if (ptr == symbol) {
-      name = string+1;
-      break;
-    }
-  }
-
-  return name;
+  return sym_data.name;
 }
 
 /*
@@ -447,27 +662,65 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig
 
   // Go through all the mach objects that are loaded into this process
   for (i=0; i < header_count; i++) {
-    const struct mach_header *current_hdr = _dyld_get_image_header(i);
-    if ((void*)current_hdr == &_mh_bundle_header)
-      continue;
+    const struct mach_header *current_hdr = NULL;
 
-    if (update_bin_for_mach_header(current_hdr, _dyld_get_image_vmaddr_slide(i), trampee_addr, tramp) == 0)
+    if ((void*)_dyld_get_image_header(i) == &_mh_bundle_header)
+      continue; // always ignore memprof.bundle
+
+    struct mach_config *cfg = mach_config_for_index(i);
+    if (cfg->filename && strstr(cfg->filename, "libSystem") != NULL) {
+      free_mach_config(cfg);
+      continue; // ignore libSystem
+    }
+
+    void *stub = find_stub_addr(trampee, cfg);
+
+    if (stub) {
+      struct dyld_stub_entry *entry = (struct dyld_stub_entry *)stub;
+      if (orig_function)
+        *orig_function = get_dyld_stub_target(entry);
+      set_dyld_stub_target(entry, tramp->addr);
+
       ret = 0;
+
+    } else if (trampee_addr) {
+      if ((current_hdr = should_update_image(i)) == NULL)
+        continue;
+
+      if (update_bin_for_mach_header(current_hdr, _dyld_get_image_vmaddr_slide(i), trampee_addr, tramp) == 0) {
+        ret = 0;
+        if (orig_function)
+          *orig_function = trampee_addr;
+      }
+    }
+
+    free_mach_config(cfg);
   }
+
   return ret;
 }
 
 void *
-bin_allocate_page()
+do_bin_allocate_page(struct mach_config *cfg)
 {
   void *ret = NULL;
+  void *addr = (void *)cfg->load_addr;
   size_t i = 0;
 
-  for (i = memprof_config.pagesize; i < INT_MAX - memprof_config.pagesize; i += memprof_config.pagesize) {
-    ret = mmap((void*)(NULL + i), memprof_config.pagesize, PROT_WRITE|PROT_READ|PROT_EXEC,
+  dbg_printf("ruby loaded at: %p\n", addr);
+
+  /*
+   * XXX no clue how large the text segment is, so guess.
+   * TODO remove this.
+   */
+  addr += 65535;
+
+  for (; i < INT_MAX - memprof_config.pagesize; i += memprof_config.pagesize, addr += memprof_config.pagesize) {
+    ret = mmap(addr, memprof_config.pagesize, PROT_WRITE|PROT_READ|PROT_EXEC,
                MAP_ANON|MAP_PRIVATE, -1, 0);
 
     if (ret != MAP_FAILED) {
+      dbg_printf("found a page at: %p\n", ret);
       memset(ret, 0x90, memprof_config.pagesize);
       return ret;
     }
@@ -475,38 +728,68 @@ bin_allocate_page()
   return NULL;
 }
 
+void *
+bin_allocate_page()
+{
+  return do_bin_allocate_page(&ruby_img_cfg);
+}
+
 size_t
 bin_type_size(const char *type)
 {
+  (void) type;
   return 0;
 }
 
 int
 bin_type_member_offset(const char *type, const char *member)
 {
+  (void) type;
+  (void) member;
   return -1;
 }
 
 void
 bin_init()
 {
-  void *file = NULL;
+  void *ptr = NULL;
   int index = 0;
+  Dl_info info;
 
-  memset(&mach_config, 0, sizeof(struct mach_config));
+  memset(&ruby_img_cfg, 0, sizeof(struct mach_config));
 
-  file = get_ruby_file_and_header_index(&index);
+  // We can use this is a reasonably sure method of finding the file
+  // that the Ruby junk resides in.
+  ptr = dlsym(RTLD_DEFAULT, "rb_newobj");
 
-  const struct mach_header_64 *hdr = (const struct mach_header_64*) file;
+  if (!ptr)
+    errx(EX_SOFTWARE, "Could not find rb_newobj in this process. WTF???");
+
+  if (!dladdr(ptr, &info) || !info.dli_fname)
+    errx(EX_SOFTWARE, "Could not find the Mach object associated with rb_newobj.");
+
+  ruby_img_cfg.file.name = ruby_img_cfg.filename = info.dli_fname;
+  if (mmap_file_open(&ruby_img_cfg.file) < 0)
+    errx(EX_OSFILE, "Failed to fread() file %s", ruby_img_cfg.filename);
+  struct mach_header_64 *hdr = (struct mach_header_64*) ruby_img_cfg.file.data;
+  assert(hdr);
+  ruby_img_cfg.hdr = (const struct mach_header *)hdr;
+
   if (hdr->magic != MH_MAGIC_64)
     errx(EX_SOFTWARE, "Magic for Ruby Mach-O file doesn't match");
 
-  mach_config.image_offset = _dyld_get_image_vmaddr_slide(index);
+  index = find_dyld_image_index((const struct mach_header_64*) info.dli_fbase);
+  ruby_img_cfg.image_offset = _dyld_get_image_vmaddr_slide(index);
+  ruby_img_cfg.index = index;
+  ruby_img_cfg.load_addr = dyld_get_image_info_for_index(index)->imageLoadAddress;
 
-  extract_symbol_table(hdr, &mach_config.symbol_table, &mach_config.string_table, &mach_config.symbol_count, &mach_config.string_table_size);
+  extract_symbol_table(hdr, &ruby_img_cfg);
 
-  assert(mach_config.symbol_table != NULL);
-  assert(mach_config.string_table != NULL);
-  assert(mach_config.symbol_count > 0);
+  assert(ruby_img_cfg.symbol_table != NULL);
+  assert(ruby_img_cfg.string_table != NULL);
+  assert(ruby_img_cfg.symbol_count > 0);
+
+  // XXX: do not free this, since we're using the symbol and string tables from inside the file
+  // free(hdr);
 }
 #endif

@@ -27,14 +27,14 @@ arch_insert_st1_tramp(void *start, void *trampee, void *tramp)
   assert(tramp != NULL);
 
   int32_t fn_addr = 0;
+  int32_t offset = 0;
   struct st1_base *check = start;
 
   if (check->call == 0xe8) {
     fn_addr = check->displacement;
     if ((trampee - (void *)(check + 1)) == fn_addr) {
-      WRITE_INSTRUCTIONS(&check->displacement,
-                         sizeof(*check),
-                         (check->displacement = (tramp - (void *)(check + 1))));
+      offset = tramp - (void *)(check + 1);
+      copy_instructions(&check->displacement, &offset, sizeof(offset));
       return 0;
     }
   }

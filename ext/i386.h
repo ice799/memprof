@@ -16,8 +16,8 @@ static struct tramp_st2_entry {
   unsigned char ret;
 } __attribute__((__packed__)) default_st2_tramp = {
   .ebx_save      = 0x53,            /* push ebx */
-  .mov           = 0xbb,             /* mov addr into ebx */
-  .addr          = 0,                /* this is filled in later */
+  .mov           = 0xbb,            /* mov addr into ebx */
+  .addr          = 0,               /* this is filled in later */
   .call          = {0xff, 0xd3},    /* calll *ebx */
   .ebx_restore   = 0x5b,            /* pop ebx */
   .ret           = 0xc3,            /* ret */
