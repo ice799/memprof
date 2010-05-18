@@ -68,11 +68,6 @@ mysql_trace_dump(json_gen gen) {
     json_gen_cstr(gen, "time");
     json_gen_double(gen, stats.query_time);
   }
-
-  // fprintf(stderr, "================ Mysql ====================================\n");
-  // fprintf(stderr, " # queries: %zd\n", stats.query_calls);
-  // fprintf(stderr, " time querying: %fs\n", stats.query_time);
-  // fprintf(stderr, "===========================================================\n\n");
 }
 
 void install_mysql_tracer()

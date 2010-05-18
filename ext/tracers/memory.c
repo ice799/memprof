@@ -180,22 +180,6 @@ malloc_trace_dump(json_gen gen)
     json_gen_integer(gen, stats.free_bytes_actual);
     json_gen_map_close(gen);
   }
-
-  // fprintf(stderr, "================ Malloc ===================================\n");
-  // fprintf(stderr, " Calls to malloc: %zd, realloc: %zd, calloc: %zd, free: %zd\n",
-  //     stats.malloc_calls,
-  //     stats.realloc_calls,
-  //     stats.calloc_calls,
-  //     stats.free_calls);
-  // fprintf(stderr, "================ Requested ================================\n");
-  // fprintf(stderr, " Malloced: %zd, Realloced: %zd, Calloced: %zd\n",
-  //     stats.malloc_bytes_requested, stats.realloc_bytes_requested,
-  //     stats.calloc_bytes_requested);
-  // fprintf(stderr, "================ Actual ===================================\n");
-  // fprintf(stderr, " Malloced: %zd, Realloced: %zd, Calloced: %zd, Freed: %zd\n",
-  //     stats.malloc_bytes_actual, stats.realloc_bytes_actual,
-  //     stats.calloc_bytes_actual, stats.free_bytes_actual);
-  // fprintf(stderr, "===========================================================\n\n");
 }
 
 void install_malloc_tracer()

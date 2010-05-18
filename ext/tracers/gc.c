@@ -65,10 +65,6 @@ gc_trace_dump(json_gen gen) {
 
   json_gen_cstr(gen, "time");
   json_gen_double(gen, stats.gc_time);
-
-  // fprintf(stderr, "================ GC =======================================\n");
-  // fprintf(stderr, " # calls: %zd\n time: %fs\n", stats.gc_calls, stats.gc_time);
-  // fprintf(stderr, "===========================================================\n\n");
 }
 
 void install_gc_tracer()

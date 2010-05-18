@@ -141,10 +141,6 @@ objects_trace_dump(json_gen gen) {
     }
   }
   json_gen_map_close(gen);
-
-  // fprintf(stderr, "================ Objs =====================================\n");
-  // fprintf(stderr, " # objs created: %zd\n", stats.newobj_calls);
-  // fprintf(stderr, "===========================================================\n\n");
 }
 
 void install_objects_tracer()
