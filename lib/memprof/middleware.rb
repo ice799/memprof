@@ -11,6 +11,10 @@ module Memprof
         puts
         puts '-' * 80
         puts '-' * 80
+        if @options[:force_gc]
+          puts "Forcing GC...."
+          GC.start
+        end
       }
       ret
     end
