@@ -1906,7 +1906,11 @@ init_memprof_config_extended() {
     /* who knows what could happen */
     if (TYPE(ruby_build_info) == T_STRING)
       fprintf(stderr, "%s\n", StringValuePtr(ruby_build_info));
-    errx(EX_SOFTWARE, "Memprof does not have enough data to run. Please email this output to bugs@memprof.com");
+
+    fprintf(stderr, "\nTry installing debug symbols (apt-get install libruby1.8-dbg or similar), or using a "
+                    "Ruby built with RVM (http://rvm.beginrescueend.com/)\n\n");
+
+    errx(EX_SOFTWARE, "If that doesn't work, please email this output to bugs@memprof.com");
   }
 }
 
