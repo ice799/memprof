@@ -1,8 +1,9 @@
 require File.expand_path('../../memprof', __FILE__)
 module Memprof
   class Middleware
-    def initialize(app)
+    def initialize(app, opts = {})
       @app = app
+      @options = opts
     end
     def call(env)
       ret = nil
