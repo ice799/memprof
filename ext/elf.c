@@ -60,8 +60,6 @@ struct elf_info {
   size_t plt_size;
   size_t plt_count;
 
-  GElf_Addr debuglink_addr;
-  size_t debuglink_sz;
   Elf_Data *debuglink_data;
 
   GElf_Ehdr ehdr;
@@ -1135,17 +1133,14 @@ dissect_elf(struct elf_info *info, int find_debug)
       if (strcmp(elf_strptr(elf, shstrndx, shdr.sh_name), ".plt") == 0) {
         info->plt_addr = shdr.sh_addr;
       } else if (strcmp(elf_strptr(elf, shstrndx, shdr.sh_name), ".gnu_debuglink") == 0) {
-        info->debuglink_addr = shdr.sh_addr;
-        info->debuglink_sz = shdr.sh_size;
-        dbg_printf("address: %lx, size: %zd\n", shdr.sh_addr, shdr.sh_size);
-
-       if ((info->debuglink_data = elf_getdata(scn, NULL)) == NULL ||
-           info->debuglink_data->d_size == 0) {
+        dbg_printf("gnu_debuglink section found\n", shdr.sh_size);
+        if ((info->debuglink_data = elf_getdata(scn, NULL)) == NULL ||
+             info->debuglink_data->d_size == 0) {
           dbg_printf(".gnu_debuglink section existed, but wasn't readable.\n");
           ret = 2;
           goto out;
-       }
-       dbg_printf("size: %zd\n", shdr.sh_size);
+        }
+        dbg_printf("gnu_debuglink section read (size: %zd)\n", shdr.sh_size);
       }
     }
     /*
@@ -1165,7 +1160,11 @@ dissect_elf(struct elf_info *info, int find_debug)
 
   /* If this object has no symbol table there's nothing else to do but fail */
   if (!info->symtab_data) {
-    dbg_printf("binary is stripped. memprof only works on binaries that are not stripped!\n");
+    if (info->debuglink_data) {
+      dbg_printf("binary is stripped, but there is debug symbol information. memprof will try to read debug symbols in.\n");
+    } else {
+      dbg_printf("binary is stripped, and no debug symbol info was found. memprof only works on binaries that are not stripped!\n");
+    }
     ret = 1;
   }
 
@@ -1195,10 +1194,10 @@ dissect_elf(struct elf_info *info, int find_debug)
 
 out:
   if (find_debug && ret == 1) {
-    if (info->debuglink_addr) {
+    if (info->debuglink_data) {
       find_debug_syms(info);
     } else {
-      dbg_printf("=== WARNING: Object %s was STRIPPED and had no debuglink section. Nothing left to try.", info->filename);
+      dbg_printf("=== WARNING: Object %s was STRIPPED and had no debuglink section. Nothing left to try.\n", info->filename);
     }
   }
   return ret;
