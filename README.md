@@ -9,6 +9,9 @@ leaks in your application.
 Memprof can also do very lightweight function call tracing to figure out
 which system and library calls are happening in your code.
 
+Memprof currently only works on Ruby 1.8 in a 64 bits system. See the
+compatibility section below.
+
 # Installation
 
     gem install memprof
