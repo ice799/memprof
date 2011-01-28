@@ -346,6 +346,35 @@ memprof_track(int argc, VALUE *argv, VALUE self)
   return Qnil;
 }
 
+static json_gen_status
+json_gen_id(json_gen gen, ID id)
+{
+  if (id) {
+    if (id < 100)
+      return json_gen_format(gen, ":%c", id);
+    else
+      return json_gen_format(gen, ":%s", rb_id2name(id));
+  } else
+    return json_gen_null(gen);
+}
+
+static json_gen_status
+json_gen_value(json_gen gen, VALUE obj)
+{
+  if (FIXNUM_P(obj))
+    return json_gen_integer(gen, NUM2LONG(obj));
+  else if (NIL_P(obj) || obj == Qundef)
+    return json_gen_null(gen);
+  else if (obj == Qtrue)
+    return json_gen_bool(gen, 1);
+  else if (obj == Qfalse)
+    return json_gen_bool(gen, 0);
+  else if (SYMBOL_P(obj))
+    return json_gen_id(gen, SYM2ID(obj));
+  else
+    return json_gen_pointer(gen, (void*)obj);
+}
+
 static json_gen_config fancy_conf = { .beautify = 1, .indentString = "  " };
 static json_gen_config basic_conf = { .beautify = 0, .indentString = "  " };
 
@@ -533,6 +562,14 @@ memprof_trace_request(VALUE self, VALUE env)
     DUMP_HASH_ENTRY("QUERY_STRING");
 
     json_gen_map_close(gen);
+
+    if (RTEST(ret) && BUILTIN_TYPE(ret) == T_ARRAY) {
+      json_gen_cstr(gen, "response");
+      json_gen_map_open(gen);
+      json_gen_cstr(gen, "code");
+      json_gen_value(gen, RARRAY_PTR(ret)[0]);
+      json_gen_map_close(gen);
+    }
   }
 
   json_gen_cstr(gen, "time");
@@ -567,35 +604,6 @@ memprof_trace_request(VALUE self, VALUE env)
 #ifndef RSTRING_LEN
 #define RSTRING_LEN(str) RSTRING(str)->len
 #endif
-
-static json_gen_status
-json_gen_id(json_gen gen, ID id)
-{
-  if (id) {
-    if (id < 100)
-      return json_gen_format(gen, ":%c", id);
-    else
-      return json_gen_format(gen, ":%s", rb_id2name(id));
-  } else
-    return json_gen_null(gen);
-}
-
-static json_gen_status
-json_gen_value(json_gen gen, VALUE obj)
-{
-  if (FIXNUM_P(obj))
-    return json_gen_integer(gen, NUM2LONG(obj));
-  else if (NIL_P(obj) || obj == Qundef)
-    return json_gen_null(gen);
-  else if (obj == Qtrue)
-    return json_gen_bool(gen, 1);
-  else if (obj == Qfalse)
-    return json_gen_bool(gen, 0);
-  else if (SYMBOL_P(obj))
-    return json_gen_id(gen, SYM2ID(obj));
-  else
-    return json_gen_pointer(gen, (void*)obj);
-}
 
 static int
 each_hash_entry(st_data_t key, st_data_t record, st_data_t arg)
