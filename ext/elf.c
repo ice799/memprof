@@ -51,6 +51,8 @@ struct elf_info {
   void *text_segment;
   size_t text_segment_len;
 
+  GElf_Addr got_addr;
+
   GElf_Addr relplt_addr;
   Elf_Data *relplt;
   size_t relplt_count;
@@ -129,12 +131,28 @@ struct plt_entry {
  * the entry uses.
  */
 static void *
-get_got_addr(struct plt_entry *plt)
+get_got_addr(struct plt_entry *plt, struct elf_info *info)
 {
+  void *addr = NULL;
+
   assert(plt != NULL);
-  /* the jump is relative to the start of the next instruction. */
-  dbg_printf("PLT addr: %p, .got.plt slot: %p\n", plt, (void *)&(plt->pad) + plt->jmp_disp);
-  return (void *)&(plt->pad) + plt->jmp_disp;
+  assert(plt->jmp[0] == 0xff);
+
+  if (plt->jmp[1] == 0x25) {
+#if defined(_ARCH_x86_64_)
+    // jmpq   *0x2ccf3a(%rip)
+    addr = (void *)&(plt->pad) + plt->jmp_disp;
+#else
+    // jmp    *0x81060f0
+    addr = (void *)(plt->jmp_disp);
+#endif
+  } else if (plt->jmp[1] == 0xa3) {
+    // jmp    *0x130(%ebx)
+    addr = (void *)(info->base_addr + info->got_addr + plt->jmp_disp);
+  }
+
+  dbg_printf("PLT addr: %p, .got.plt slot: %p\n", plt, addr);
+  return addr;
 }
 
 /*
@@ -144,15 +162,15 @@ get_got_addr(struct plt_entry *plt)
  * returns the original function address
  */
 static void *
-overwrite_got(void *plt, const void *tramp)
+overwrite_got(void *plt, const void *tramp, struct elf_info *info)
 {
   assert(plt != NULL);
   assert(tramp != NULL);
   void *ret = NULL;
 
-  memcpy(&ret, get_got_addr(plt), sizeof(void *));
-  copy_instructions(get_got_addr(plt), &tramp, sizeof(void *));
-  dbg_printf("GOT value overwritten to: %p\n", tramp);
+  memcpy(&ret, get_got_addr(plt, info), sizeof(void *));
+  copy_instructions(get_got_addr(plt, info), &tramp, sizeof(void *));
+  dbg_printf("GOT value overwritten to: %p, from: %p\n", tramp, ret);
   return ret;
 }
 
@@ -237,7 +255,7 @@ hook_required_objects(struct elf_info *info, void *data)
 
   if ((trampee_addr = find_plt_addr(hook_data->sym, info)) != NULL) {
     dbg_printf("found: %s @ %p\n", hook_data->sym, trampee_addr);
-    overwrite_got(trampee_addr, hook_data->addr);
+    overwrite_got(trampee_addr, hook_data->addr, info);
   }
 
   return;
@@ -344,29 +362,39 @@ find_plt_addr(const char *symname, struct elf_info *info)
 
   /* Search through each of the .rela.plt entries */
   for (i = 0; i < info->relplt_count; i++) {
+    GElf_Rel rel;
     GElf_Rela rela;
     GElf_Sym sym;
     GElf_Addr addr;
-    void *ret;
+    void *ret = NULL;
     const char *name;
 
     if (info->relplt->d_type == ELF_T_RELA) {
       ret = gelf_getrela(info->relplt, i, &rela);
-
       if (ret == NULL
           || ELF64_R_SYM(rela.r_info) >= info->dynsym_count
           || gelf_getsym(info->dynsym, ELF64_R_SYM(rela.r_info), &sym) == NULL)
-        return NULL;
+        continue;
 
-      name = info->dynstr + sym.st_name;
+    } else if (info->relplt->d_type == ELF_T_REL) {
+      ret = gelf_getrel(info->relplt, i, &rel);
+      if (ret == NULL
+          || ELF64_R_SYM(rel.r_info) >= info->dynsym_count
+          || gelf_getsym(info->dynsym, ELF64_R_SYM(rel.r_info), &sym) == NULL)
+        continue;
+    } else {
+      dbg_printf("unknown relplt entry type: %d\n", info->relplt->d_type);
+      continue;
+    }
 
-      /* The name matches the name of the symbol passed in, so get the PLT entry
-       * address and return it.
-       */
-      if (strcmp(symname, name) == 0) {
-        addr = get_plt_addr(info, i);
-        return (void *)addr;
-      }
+    name = info->dynstr + sym.st_name;
+
+    /* The name matches the name of the symbol passed in, so get the PLT entry
+     * address and return it.
+     */
+    if (strcmp(symname, name) == 0) {
+      addr = get_plt_addr(info, i);
+      return (void *)addr;
     }
   }
 
@@ -426,6 +454,7 @@ do_bin_find_symbol(const char *sym, size_t *size, struct elf_info *elf)
     for (; esym < lastsym; esym++){
       /* ignore numeric/empty symbols */
       if ((esym->st_value == 0) ||
+          (elf->dynstr == 0) ||
           (ELF32_ST_BIND(esym->st_info)== STB_NUM))
         continue;
 
@@ -563,7 +592,7 @@ bin_update_image(const char *trampee, struct tramp_st2_entry *tramp, void **orig
   if (trampee_addr) {
     void *ret = NULL;
     dbg_printf("Found %s in the PLT, inserting tramp...\n", trampee);
-    ret = overwrite_got(trampee_addr, tramp->addr);
+    ret = overwrite_got(trampee_addr, tramp->addr, ruby_info);
 
     assert(ret != NULL);
 
@@ -1079,6 +1108,9 @@ dissect_elf(struct elf_info *info, int find_debug)
         if (dyn.d_tag == DT_JMPREL) {
           info->relplt_addr = dyn.d_un.d_ptr;
         }
+        else if (dyn.d_tag == DT_PLTGOT) {
+          info->got_addr = dyn.d_un.d_ptr;
+        }
         else if (dyn.d_tag == DT_PLTRELSZ) {
           info->plt_size = dyn.d_un.d_val;
         }
@@ -1108,8 +1140,8 @@ dissect_elf(struct elf_info *info, int find_debug)
 
       data = elf_getdata(scn, NULL);
       if (data == NULL || elf_getdata(scn, data) != NULL
-          || shdr.sh_size != data->d_size || data->d_off) {
-        dbg_printf("Couldn't get .dynstr data");
+          || shdr.sh_size != data->d_size) {// condition true on 32bit: || data->d_off) {
+        dbg_printf("Couldn't get .dynstr data\n");
         ret = 1;
         goto out;
       }
@@ -1132,6 +1164,8 @@ dissect_elf(struct elf_info *info, int find_debug)
     else if (shdr.sh_type == SHT_PROGBITS) {
       if (strcmp(elf_strptr(elf, shstrndx, shdr.sh_name), ".plt") == 0) {
         info->plt_addr = shdr.sh_addr;
+      } else if (strcmp(elf_strptr(elf, shstrndx, shdr.sh_name), ".got.plt") == 0) {
+        info->got_addr = shdr.sh_addr;
       } else if (strcmp(elf_strptr(elf, shstrndx, shdr.sh_name), ".gnu_debuglink") == 0) {
         dbg_printf("gnu_debuglink section found\n", shdr.sh_size);
         if ((info->debuglink_data = elf_getdata(scn, NULL)) == NULL ||
@@ -1213,9 +1247,6 @@ void
 bin_init()
 {
   Dwarf_Error dwrf_err;
-
-  ASSERT_ON_COMPILE(sizeof(unsigned long) == sizeof(GElf_Addr));
-  ASSERT_ON_COMPILE(sizeof(unsigned long) == sizeof(Elf64_Addr));
 
   ruby_info = calloc(1, sizeof(*ruby_info));
 
