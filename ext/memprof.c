@@ -1951,6 +1951,7 @@ Init_memprof()
   install_fd_tracer();
   install_mysql_tracer();
   install_memcache_tracer();
+  install_resources_tracer();
 
   gc_hook = Data_Wrap_Struct(rb_cObject, sourcefile_marker, NULL, NULL);
   rb_global_variable(&gc_hook);

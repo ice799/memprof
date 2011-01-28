@@ -43,4 +43,5 @@ extern void install_fd_tracer();
 extern void install_mysql_tracer();
 extern void install_objects_tracer();
 extern void install_memcache_tracer();
+extern void install_resources_tracer();
 #endif
