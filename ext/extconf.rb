@@ -186,7 +186,7 @@ if have_header('mach-o/dyld.h')
     expressions << ["address__#{name}", "&#{name}"]
   end
 
-  pid = fork{sleep}
+  pid = fork{sleep while true}
   output = IO.popen('gdb --interpreter=mi --quiet', 'w+') do |io|
     io.puts "attach #{pid}"
     expressions.each do |name, expr|
