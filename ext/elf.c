@@ -300,6 +300,9 @@ do_bin_allocate_page(struct elf_info *info)
      * grab a page in the lower 4gb of the address space.
      */
     assert((size_t)info->text_segment <= UINT_MAX);
+#ifndef MAP_32BIT
+#define MAP_32BIT // no MAP_32BIT defined on certain 32bit systems
+#endif
     return mmap(NULL, memprof_config.pagesize, PROT_WRITE|PROT_READ|PROT_EXEC, MAP_ANON|MAP_PRIVATE|MAP_32BIT, -1, 0);
   }
 
