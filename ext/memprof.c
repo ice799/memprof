@@ -498,7 +498,7 @@ memprof_trace_request(VALUE self, VALUE env)
 
   json_gen_cstr(gen, "start");
   gettimeofday(&now, NULL);
-  json_gen_integer(gen, (now.tv_sec * 1000000) + now.tv_usec);
+  json_gen_integer(gen, (now.tv_sec * 1000) + (now.tv_usec / 1000));
 
   json_gen_cstr(gen, "tracers");
   json_gen_map_open(gen);
