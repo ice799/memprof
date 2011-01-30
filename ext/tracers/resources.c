@@ -15,14 +15,14 @@ struct memprof_resources_stats {
   long inblock;
   long oublock;
 
-  double utime;
-  double stime;
+  int64_t utime;
+  int64_t stime;
 };
 
 static struct tracer tracer;
 static struct memprof_resources_stats stats;
 
-#define TVAL_TO_DBL(tv) ((double)tv.tv_sec + (double)tv.tv_usec * 1e-6)
+#define TVAL_TO_INT64(tv) ((int64_t)tv.tv_sec*1e3 + (int64_t)tv.tv_usec*1e-3)
 
 static void
 resources_trace_start() {
@@ -34,8 +34,8 @@ resources_trace_start() {
   stats.inblock = -usage.ru_inblock;
   stats.oublock = -usage.ru_oublock;
 
-  stats.stime = -TVAL_TO_DBL(usage.ru_stime);
-  stats.utime = -TVAL_TO_DBL(usage.ru_utime);
+  stats.stime = -TVAL_TO_INT64(usage.ru_stime);
+  stats.utime = -TVAL_TO_INT64(usage.ru_utime);
 }
 
 static void
@@ -49,8 +49,8 @@ resources_trace_dump(json_gen gen) {
     stats.inblock += usage.ru_inblock;
     stats.oublock += usage.ru_oublock;
 
-    stats.stime += TVAL_TO_DBL(usage.ru_stime);
-    stats.utime += TVAL_TO_DBL(usage.ru_utime);
+    stats.stime += TVAL_TO_INT64(usage.ru_stime);
+    stats.utime += TVAL_TO_INT64(usage.ru_utime);
   }
 
   json_gen_cstr(gen, "signals");
@@ -63,10 +63,10 @@ resources_trace_dump(json_gen gen) {
   json_gen_integer(gen, stats.oublock);
 
   json_gen_cstr(gen, "stime");
-  json_gen_double(gen, stats.stime);
+  json_gen_integer(gen, stats.stime);
 
   json_gen_cstr(gen, "utime");
-  json_gen_double(gen, stats.utime);
+  json_gen_integer(gen, stats.utime);
 }
 
 static void
@@ -83,7 +83,7 @@ void install_resources_tracer()
   tracer.stop = resources_trace_stop;
   tracer.reset = resources_trace_reset;
   tracer.dump = resources_trace_dump;
-  tracer.id = "resource";
+  tracer.id = "resources";
 
   trace_insert(&tracer);
 }
