@@ -38,9 +38,9 @@ describe 'Memprof tracers' do
       select(nil, nil, nil, 0.15)
     end
 
-    filedata.should =~ /"select":\{"calls":1,"time":0\.1[567]/
+    filedata.should =~ /"select":\{"calls":1,"time":1[567]\d/
     time = filedata[/"select":\{"calls":\d+,"time":([\d.]+)/, 1].to_f
-    time.should.be.close(0.15, 0.1)
+    time.should.be.close(150, 10)
   end
 
   should 'trace objects created for block' do
@@ -79,7 +79,7 @@ describe 'Memprof tracers' do
 
         filedata.should =~ /"mysql":\{"queries":5,"time":([\d.]+)/
         time = filedata[/"mysql":\{"queries":5,"time":([\d.]+)/, 1].to_f
-        time.should.be.close(0.25, 0.1)
+        time.should.be.close(250, 25)
       end
     rescue Mysql::Error => e
       raise unless e.message =~ /connect/
