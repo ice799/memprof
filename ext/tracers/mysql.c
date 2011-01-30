@@ -19,7 +19,9 @@ struct memprof_mysql_stats {
 
 static struct tracer tracer;
 static struct memprof_mysql_stats stats;
+
 static int (*orig_real_query)(void *mysql, const char *stmt_str, unsigned long length);
+static int (*orig_send_query)(void *mysql, const char *stmt_str, unsigned long length);
 
 static int
 real_query_tramp(void *mysql, const char *stmt_str, unsigned long length) {
@@ -31,6 +33,16 @@ real_query_tramp(void *mysql, const char *stmt_str, unsigned long length) {
   millis = timeofday_ms() - millis;
 
   stats.query_time += millis;
+  stats.query_calls++;
+
+  return ret;
+}
+
+static int
+send_query_tramp(void *mysql, const char *stmt_str, unsigned long length) {
+  int ret;
+
+  ret = orig_send_query(mysql, stmt_str, length);
   stats.query_calls++;
 
   return ret;
@@ -48,6 +60,10 @@ mysql_trace_start() {
   orig_real_query = bin_find_symbol("mysql_real_query", NULL, 1);
   if (orig_real_query)
     insert_tramp("mysql_real_query", real_query_tramp);
+
+  orig_send_query = bin_find_symbol("mysql_send_query", NULL, 1);
+  if (orig_send_query)
+    insert_tramp("mysql_send_query", send_query_tramp);
 }
 
 static void
