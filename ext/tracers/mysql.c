@@ -14,7 +14,7 @@
 
 struct memprof_mysql_stats {
   size_t query_calls;
-  double query_time;
+  uint32_t query_time;
 };
 
 static struct tracer tracer;
@@ -23,14 +23,14 @@ static int (*orig_real_query)(void *mysql, const char *stmt_str, unsigned long l
 
 static int
 real_query_tramp(void *mysql, const char *stmt_str, unsigned long length) {
-  double secs = 0;
+  uint32_t millis = 0;
   int ret;
 
-  secs = timeofday();
+  millis = timeofday_ms();
   ret = orig_real_query(mysql, stmt_str, length);
-  secs = timeofday() - secs;
+  millis = timeofday_ms() - millis;
 
-  stats.query_time += secs;
+  stats.query_time += millis;
   stats.query_calls++;
 
   return ret;
@@ -66,7 +66,7 @@ mysql_trace_dump(json_gen gen) {
     json_gen_integer(gen, stats.query_calls);
 
     json_gen_cstr(gen, "time");
-    json_gen_double(gen, stats.query_time);
+    json_gen_integer(gen, stats.query_time);
   }
 }
 

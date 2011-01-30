@@ -1,6 +1,8 @@
 #if !defined(__util_h__)
 #define __util_h__
 
+#include <stdint.h>
+
 #if defined(_MEMPROF_DEBUG)
 #include <stdio.h>
 #define dbg_printf(...) do {\
@@ -73,9 +75,13 @@ struct memprof_config {
 unsigned long
 gnu_debuglink_crc32 (unsigned long crc, unsigned char *buf, size_t len);
 
+/* Copy of timeofday() implementation inside ruby 1.8, used w/ thread state */
+double
+timeofday();
+
 /* Use this function for time tracking. It will (interally) try to use an
  * appropriately granual timing function.
  */
-double
-timeofday();
+uint64_t
+timeofday_ms();
 #endif

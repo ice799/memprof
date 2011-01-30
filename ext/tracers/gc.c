@@ -13,7 +13,7 @@
 
 struct memprof_gc_stats {
   size_t gc_calls;
-  double gc_time;
+  uint32_t gc_time;
 };
 
 static struct tracer tracer;
@@ -23,13 +23,13 @@ static void (*orig_garbage_collect)();
 static void
 gc_tramp()
 {
-  double secs = 0;
+  uint32_t millis = 0;
 
-  secs = timeofday();
+  millis = timeofday_ms();
   orig_garbage_collect();
-  secs = timeofday() - secs;
+  millis = timeofday_ms() - millis;
 
-  stats.gc_time += secs;
+  stats.gc_time += millis;
   stats.gc_calls++;
 }
 
@@ -64,7 +64,7 @@ gc_trace_dump(json_gen gen) {
   json_gen_integer(gen, stats.gc_calls);
 
   json_gen_cstr(gen, "time");
-  json_gen_double(gen, stats.gc_time);
+  json_gen_integer(gen, stats.gc_time);
 }
 
 void install_gc_tracer()

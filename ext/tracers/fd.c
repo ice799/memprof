@@ -17,20 +17,20 @@
 
 struct memprof_fd_stats {
   size_t read_calls;
-  double read_time;
+  uint32_t read_time;
   size_t read_requested_bytes;
   size_t read_actual_bytes;
 
   size_t write_calls;
-  double write_time;
+  uint32_t write_time;
   size_t write_requested_bytes;
   size_t write_actual_bytes;
 
   size_t connect_calls;
-  double connect_time;
+  uint32_t connect_time;
 
   size_t select_calls;
-  double select_time;
+  uint32_t select_time;
 };
 
 static struct tracer tracer;
@@ -38,16 +38,16 @@ static struct memprof_fd_stats stats;
 
 static ssize_t
 read_tramp(int fildes, void *buf, size_t nbyte) {
-  double secs = 0;
+  uint32_t millis = 0;
   int err;
   ssize_t ret;
 
-  secs = timeofday();
+  millis = timeofday_ms();
   ret = read(fildes, buf, nbyte);
   err = errno;
-  secs = timeofday() - secs;
+  millis = timeofday_ms() - millis;
 
-  stats.read_time += secs;
+  stats.read_time += millis;
   stats.read_calls++;
   stats.read_requested_bytes += nbyte;
   if (ret > 0)
@@ -59,16 +59,16 @@ read_tramp(int fildes, void *buf, size_t nbyte) {
 
 static ssize_t
 write_tramp(int fildes, const void *buf, size_t nbyte) {
-  double secs = 0;
+  uint32_t millis = 0;
   int err;
   ssize_t ret;
 
-  secs = timeofday();
+  millis = timeofday_ms();
   ret = write(fildes, buf, nbyte);
   err = errno;
-  secs = timeofday() - secs;
+  millis = timeofday_ms() - millis;
 
-  stats.write_time += secs;
+  stats.write_time += millis;
   stats.write_calls++;
   stats.write_requested_bytes += nbyte;
   if (ret > 0)
@@ -80,15 +80,15 @@ write_tramp(int fildes, const void *buf, size_t nbyte) {
 
 static int
 connect_tramp(int socket, const struct sockaddr *address, socklen_t address_len) {
-  double secs = 0;
+  uint32_t millis = 0;
   int err, ret;
 
-  secs = timeofday();
+  millis = timeofday_ms();
   ret = connect(socket, address, address_len);
   err = errno;
-  secs = timeofday() - secs;
+  millis = timeofday_ms() - millis;
 
-  stats.connect_time += secs;
+  stats.connect_time += millis;
   stats.connect_calls++;
 
   errno = err;
@@ -98,15 +98,15 @@ connect_tramp(int socket, const struct sockaddr *address, socklen_t address_len)
 static int
 select_tramp(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds, struct timeval *timeout)
 {
-  double secs = 0;
+  uint32_t millis = 0;
   int ret, err;
 
-  secs = timeofday();
+  millis = timeofday_ms();
   ret = select(nfds, readfds, writefds, errorfds, timeout);
   err = errno;
-  secs = timeofday() - secs;
+  millis = timeofday_ms() - millis;
 
-  stats.select_time += secs;
+  stats.select_time += millis;
   stats.select_calls++;
 
   errno = err;
@@ -149,7 +149,7 @@ fd_trace_dump(json_gen gen) {
     json_gen_cstr(gen, "calls");
     json_gen_integer(gen, stats.read_calls);
     json_gen_cstr(gen, "time");
-    json_gen_double(gen, stats.read_time);
+    json_gen_integer(gen, stats.read_time);
     json_gen_cstr(gen, "requested");
     json_gen_integer(gen, stats.read_requested_bytes);
     json_gen_cstr(gen, "actual");
@@ -163,7 +163,7 @@ fd_trace_dump(json_gen gen) {
     json_gen_cstr(gen, "calls");
     json_gen_integer(gen, stats.write_calls);
     json_gen_cstr(gen, "time");
-    json_gen_double(gen, stats.write_time);
+    json_gen_integer(gen, stats.write_time);
     json_gen_cstr(gen, "requested");
     json_gen_integer(gen, stats.write_requested_bytes);
     json_gen_cstr(gen, "actual");
@@ -177,7 +177,7 @@ fd_trace_dump(json_gen gen) {
     json_gen_cstr(gen, "calls");
     json_gen_integer(gen, stats.connect_calls);
     json_gen_cstr(gen, "time");
-    json_gen_double(gen, stats.connect_time);
+    json_gen_integer(gen, stats.connect_time);
     json_gen_map_close(gen);
   }
 
@@ -187,7 +187,7 @@ fd_trace_dump(json_gen gen) {
     json_gen_cstr(gen, "calls");
     json_gen_integer(gen, stats.select_calls);
     json_gen_cstr(gen, "time");
-    json_gen_double(gen, stats.select_time);
+    json_gen_integer(gen, stats.select_time);
     json_gen_map_close(gen);
   }
 }

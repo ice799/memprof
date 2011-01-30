@@ -89,3 +89,11 @@ timeofday()
   gettimeofday(&tv, NULL);
   return (double)tv.tv_sec + (double)tv.tv_usec * 1e-6;
 }
+
+uint64_t
+timeofday_ms()
+{
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return (uint64_t)tv.tv_sec*1e3 + (uint64_t)tv.tv_usec*1e-3;
+}

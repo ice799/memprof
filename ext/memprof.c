@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <err.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -485,8 +486,9 @@ memprof_trace_request(VALUE self, VALUE env)
   if (!rb_block_given_p())
     rb_raise(rb_eArgError, "block required");
 
-  double secs;
-  struct timeval now;
+  uint64_t start_time;
+  uint64_t end_time;
+  char str_time[32];
 
   json_gen gen;
   if (tracing_json_gen)
@@ -497,8 +499,9 @@ memprof_trace_request(VALUE self, VALUE env)
   json_gen_map_open(gen);
 
   json_gen_cstr(gen, "start");
-  gettimeofday(&now, NULL);
-  json_gen_integer(gen, (now.tv_sec * 1000) + (now.tv_usec / 1000));
+  start_time = timeofday_ms();
+  sprintf(str_time, "%" PRIu64, start_time);
+  json_gen_number(gen, str_time, strlen(str_time));
 
   json_gen_cstr(gen, "tracers");
   json_gen_map_open(gen);
@@ -507,9 +510,9 @@ memprof_trace_request(VALUE self, VALUE env)
   trace_invoke_all(TRACE_RESET);
   trace_invoke_all(TRACE_START);
 
-  secs = timeofday();
+  start_time = timeofday_ms();
   VALUE ret = rb_yield(Qnil);
-  secs = timeofday() - secs;
+  end_time = timeofday_ms();
 
   trace_invoke_all(TRACE_DUMP);
   trace_invoke_all(TRACE_STOP);
@@ -573,7 +576,7 @@ memprof_trace_request(VALUE self, VALUE env)
   }
 
   json_gen_cstr(gen, "time");
-  json_gen_double(gen, secs);
+  json_gen_integer(gen, end_time-start_time);
 
   json_gen_map_close(gen);
   json_gen_reset(gen);
