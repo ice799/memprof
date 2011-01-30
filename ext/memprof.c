@@ -516,23 +516,23 @@ memprof_trace_request(VALUE self, VALUE env)
 
   json_gen_map_close(gen);
 
-  if (RTEST(env) && BUILTIN_TYPE(env) == T_HASH) {
+  if (RTEST(env) && TYPE(env) == T_HASH) {
     VALUE val, str;
     val = rb_hash_aref(env, rb_str_new2("action_controller.request.path_parameters"));
     if (!RTEST(val))
       val = rb_hash_aref(env, rb_str_new2("action_dispatch.request.parameters"));
 
-    if (RTEST(val) && BUILTIN_TYPE(val) == T_HASH) {
+    if (RTEST(val) && TYPE(val) == T_HASH) {
       json_gen_cstr(gen, "rails");
       json_gen_map_open(gen);
       str = rb_hash_aref(val, rb_str_new2("controller"));
-      if (RTEST(str) && BUILTIN_TYPE(str) == T_STRING) {
+      if (RTEST(str) && TYPE(str) == T_STRING) {
         json_gen_cstr(gen, "controller");
         json_gen_cstr(gen, RSTRING_PTR(str));
       }
 
       str = rb_hash_aref(val, rb_str_new2("action"));
-      if (RTEST(str) && BUILTIN_TYPE(str) == T_STRING) {
+      if (RTEST(str) && TYPE(str) == T_STRING) {
         json_gen_cstr(gen, "action");
         json_gen_cstr(gen, RSTRING_PTR(str));
       }
@@ -547,7 +547,7 @@ memprof_trace_request(VALUE self, VALUE env)
     #define DUMP_HASH_ENTRY(key) do {                    \
       str = rb_hash_aref(env, rb_str_new2(key));         \
       if (RTEST(str) &&                                  \
-          BUILTIN_TYPE(str) == T_STRING &&               \
+          TYPE(str) == T_STRING &&                       \
           RSTRING_PTR(str)) {                            \
         json_gen_cstr(gen, key);                         \
         json_gen_cstr(gen, RSTRING_PTR(str));            \
@@ -562,14 +562,14 @@ memprof_trace_request(VALUE self, VALUE env)
     DUMP_HASH_ENTRY("QUERY_STRING");
 
     json_gen_map_close(gen);
+  }
 
-    if (RTEST(ret) && BUILTIN_TYPE(ret) == T_ARRAY) {
-      json_gen_cstr(gen, "response");
-      json_gen_map_open(gen);
-      json_gen_cstr(gen, "code");
-      json_gen_value(gen, RARRAY_PTR(ret)[0]);
-      json_gen_map_close(gen);
-    }
+  if (RTEST(ret) && TYPE(ret) == T_ARRAY) {
+    json_gen_cstr(gen, "response");
+    json_gen_map_open(gen);
+    json_gen_cstr(gen, "code");
+    json_gen_value(gen, RARRAY_PTR(ret)[0]);
+    json_gen_map_close(gen);
   }
 
   json_gen_cstr(gen, "time");
