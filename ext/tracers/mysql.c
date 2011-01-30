@@ -9,12 +9,16 @@
 #include "bin_api.h"
 #include "json.h"
 #include "tracer.h"
+#include "tracers/sql.h"
 #include "tramp.h"
 #include "util.h"
 
 struct memprof_mysql_stats {
   size_t query_calls;
   uint32_t query_time;
+
+  size_t query_calls_by_type[sql_UNKNOWN];
+  uint32_t query_time_by_type[sql_UNKNOWN];
 };
 
 static struct tracer tracer;
@@ -25,6 +29,7 @@ static int (*orig_send_query)(void *mysql, const char *stmt_str, unsigned long l
 
 static int
 real_query_tramp(void *mysql, const char *stmt_str, unsigned long length) {
+  enum memprof_sql_type type;
   uint32_t millis = 0;
   int ret;
 
@@ -35,15 +40,23 @@ real_query_tramp(void *mysql, const char *stmt_str, unsigned long length) {
   stats.query_time += millis;
   stats.query_calls++;
 
+  type = memprof_sql_query_type(stmt_str, length);
+  stats.query_time_by_type[type] += millis;
+  stats.query_calls_by_type[type]++;
+
   return ret;
 }
 
 static int
 send_query_tramp(void *mysql, const char *stmt_str, unsigned long length) {
+  enum memprof_sql_type type;
   int ret;
 
   ret = orig_send_query(mysql, stmt_str, length);
   stats.query_calls++;
+
+  type = memprof_sql_query_type(stmt_str, length);
+  stats.query_calls_by_type[type]++;
 
   return ret;
 }
@@ -77,12 +90,30 @@ mysql_trace_reset() {
 
 static void
 mysql_trace_dump(json_gen gen) {
+  enum memprof_sql_type i;
+
   if (stats.query_calls > 0) {
     json_gen_cstr(gen, "queries");
     json_gen_integer(gen, stats.query_calls);
 
     json_gen_cstr(gen, "time");
     json_gen_integer(gen, stats.query_time);
+
+    json_gen_cstr(gen, "types");
+    json_gen_map_open(gen);
+    for (i=0; i<=sql_UNKNOWN; i++) {
+      json_gen_cstr(gen, memprof_sql_type_str(i));
+      json_gen_map_open(gen);
+
+      json_gen_cstr(gen, "queries");
+      json_gen_integer(gen, stats.query_calls_by_type[i]);
+
+      json_gen_cstr(gen, "time");
+      json_gen_integer(gen, stats.query_time_by_type[i]);
+
+      json_gen_map_close(gen);
+    }
+    json_gen_map_close(gen);
   }
 }
 
