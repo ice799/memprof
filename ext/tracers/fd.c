@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <errno.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,6 +32,9 @@ struct memprof_fd_stats {
 
   size_t select_calls;
   uint32_t select_time;
+
+  size_t poll_calls;
+  uint32_t poll_time;
 };
 
 static struct tracer tracer;
@@ -113,6 +117,24 @@ select_tramp(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds, stru
   return ret;
 }
 
+static int
+poll_tramp(struct pollfd fds[], nfds_t nfds, int timeout)
+{
+  uint32_t millis = 0;
+  int ret, err;
+
+  millis = timeofday_ms();
+  ret = poll(fds, nfds, timeout);
+  err = errno;
+  millis = timeofday_ms() - millis;
+
+  stats.poll_time += millis;
+  stats.poll_calls++;
+
+  errno = err;
+  return ret;
+}
+
 static void
 fd_trace_start() {
   static int inserted = 0;
@@ -124,11 +146,13 @@ fd_trace_start() {
 
   insert_tramp("read", read_tramp);
   insert_tramp("write", write_tramp);
-  insert_tramp("connect", connect_tramp);
+  insert_tramp("poll", poll_tramp);
+
   #ifdef HAVE_MACH
   insert_tramp("select$DARWIN_EXTSN", select_tramp);
   #else
   insert_tramp("select", select_tramp);
+  insert_tramp("connect", connect_tramp);
   #endif
 }
 
@@ -188,6 +212,16 @@ fd_trace_dump(json_gen gen) {
     json_gen_integer(gen, stats.select_calls);
     json_gen_cstr(gen, "time");
     json_gen_integer(gen, stats.select_time);
+    json_gen_map_close(gen);
+  }
+
+  if (stats.poll_calls > 0) {
+    json_gen_cstr(gen, "poll");
+    json_gen_map_open(gen);
+    json_gen_cstr(gen, "calls");
+    json_gen_integer(gen, stats.poll_calls);
+    json_gen_cstr(gen, "time");
+    json_gen_integer(gen, stats.poll_time);
     json_gen_map_close(gen);
   }
 }
