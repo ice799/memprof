@@ -84,4 +84,6 @@ timeofday();
  */
 uint64_t
 timeofday_ms();
+
+#define TVAL_TO_INT64(tv) ((int64_t)tv.tv_sec*1e3 + (int64_t)tv.tv_usec*1e-3)
 #endif

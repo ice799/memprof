@@ -30,7 +30,7 @@ static int (*orig_send_query)(void *mysql, const char *stmt_str, unsigned long l
 static int
 real_query_tramp(void *mysql, const char *stmt_str, unsigned long length) {
   enum memprof_sql_type type;
-  uint32_t millis = 0;
+  uint64_t millis = 0;
   int ret;
 
   millis = timeofday_ms();

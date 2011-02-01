@@ -22,8 +22,6 @@ struct memprof_resources_stats {
 static struct tracer tracer;
 static struct memprof_resources_stats stats;
 
-#define TVAL_TO_INT64(tv) ((int64_t)tv.tv_sec*1e3 + (int64_t)tv.tv_usec*1e-3)
-
 static void
 resources_trace_start() {
   struct rusage usage;

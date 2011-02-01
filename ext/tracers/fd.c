@@ -27,6 +27,10 @@ struct memprof_fd_stats {
   size_t write_requested_bytes;
   size_t write_actual_bytes;
 
+  size_t recv_calls;
+  uint32_t recv_time;
+  ssize_t recv_actual_bytes;
+
   size_t connect_calls;
   uint32_t connect_time;
 
@@ -42,7 +46,7 @@ static struct memprof_fd_stats stats;
 
 static ssize_t
 read_tramp(int fildes, void *buf, size_t nbyte) {
-  uint32_t millis = 0;
+  uint64_t millis = 0;
   int err;
   ssize_t ret;
 
@@ -63,7 +67,7 @@ read_tramp(int fildes, void *buf, size_t nbyte) {
 
 static ssize_t
 write_tramp(int fildes, const void *buf, size_t nbyte) {
-  uint32_t millis = 0;
+  uint64_t millis = 0;
   int err;
   ssize_t ret;
 
@@ -82,9 +86,29 @@ write_tramp(int fildes, const void *buf, size_t nbyte) {
   return ret;
 }
 
+static ssize_t
+recv_tramp(int socket, void *buffer, size_t length, int flags) {
+  uint64_t millis = 0;
+  int err;
+  ssize_t ret;
+
+  millis = timeofday_ms();
+  ret = recv(socket, buffer, length, flags);
+  err = errno;
+  millis = timeofday_ms() - millis;
+
+  stats.recv_time += millis;
+  stats.recv_calls++;
+  if (ret > 0)
+    stats.recv_actual_bytes += ret;
+
+  errno = err;
+  return ret;
+}
+
 static int
 connect_tramp(int socket, const struct sockaddr *address, socklen_t address_len) {
-  uint32_t millis = 0;
+  uint64_t millis = 0;
   int err, ret;
 
   millis = timeofday_ms();
@@ -102,7 +126,7 @@ connect_tramp(int socket, const struct sockaddr *address, socklen_t address_len)
 static int
 select_tramp(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds, struct timeval *timeout)
 {
-  uint32_t millis = 0;
+  uint64_t millis = 0;
   int ret, err;
 
   millis = timeofday_ms();
@@ -120,7 +144,7 @@ select_tramp(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds, stru
 static int
 poll_tramp(struct pollfd fds[], nfds_t nfds, int timeout)
 {
-  uint32_t millis = 0;
+  uint64_t millis = 0;
   int ret, err;
 
   millis = timeofday_ms();
@@ -153,6 +177,7 @@ fd_trace_start() {
   #else
   insert_tramp("select", select_tramp);
   insert_tramp("connect", connect_tramp);
+  insert_tramp("recv", recv_tramp);
   #endif
 }
 
@@ -192,6 +217,18 @@ fd_trace_dump(json_gen gen) {
     json_gen_integer(gen, stats.write_requested_bytes);
     json_gen_cstr(gen, "actual");
     json_gen_integer(gen, stats.write_actual_bytes);
+    json_gen_map_close(gen);
+  }
+
+  if (stats.recv_calls > 0) {
+    json_gen_cstr(gen, "recv");
+    json_gen_map_open(gen);
+    json_gen_cstr(gen, "calls");
+    json_gen_integer(gen, stats.recv_calls);
+    json_gen_cstr(gen, "time");
+    json_gen_integer(gen, stats.recv_time);
+    json_gen_cstr(gen, "actual");
+    json_gen_integer(gen, stats.recv_actual_bytes);
     json_gen_map_close(gen);
   }
 
