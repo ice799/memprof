@@ -17,8 +17,8 @@ struct memprof_mysql_stats {
   size_t query_calls;
   uint32_t query_time;
 
-  size_t query_calls_by_type[sql_UNKNOWN];
-  uint32_t query_time_by_type[sql_UNKNOWN];
+  size_t query_calls_by_type[sql_UNKNOWN+1];
+  uint32_t query_time_by_type[sql_UNKNOWN+1];
 };
 
 static struct tracer tracer;
