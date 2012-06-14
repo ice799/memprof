@@ -5,11 +5,8 @@ require 'optparse'
 require 'restclient'
 require 'term/ansicolor'
 
-MEMPROF_URL = "https://memprof.com/upload"
-
 MEMPROF_BANNER = <<-EOF
 Memprof Uploader
-http://www.memprof.com
 ======================
 
 EOF
@@ -25,6 +22,7 @@ class MemprofUploader
       opts.on("-p", "--pid <pid>", Integer, "PID of the process to dump       (required)")      {|arg| @pid = arg }
       opts.on("-n", "--name <name>",        "Name for your dump               (required)")      {|arg| @name = arg }
       opts.on("-k", "--key <key>",          "Memprof.com API key              (required)")      {|arg| @key = arg }
+      opts.on("-u", "--url <url>",          "Memprof.com application URL      (default https://memprof.com)") {|arg| @url = arg }
       opts.on("-d", "--[no-]delete",        "Delete dump file after uploading (default true)")  {|arg| @delete_dump = arg }
       opts.on("-s", "--seconds <seconds>",
                     Integer,                "Seconds to wait for the dump     (default 300)")   {|arg| @secs = arg }
@@ -60,6 +58,10 @@ class MemprofUploader
         fail_with(e.message)
       end
     end
+
+    # Make this default to https://memprof.com if the user didn't pass custom application URL.
+    @url ||= "https://memprof.com"
+    @upload_url = "#{@url}/upload"
 
     # Make this default to true if the user didn't pass any preference.
     @delete_dump = true if @delete_dump.nil?
@@ -142,8 +144,8 @@ class MemprofUploader
 
     file = File.open(filename, "r")
 
-    puts "\nUploading to memprof.com..."
-    response = RestClient.post(MEMPROF_URL, :upload => file, :name => name, :key => key)
+    puts "\nUploading to #{@url}..."
+    response = RestClient.post(@upload_url, :upload => file, :name => name, :key => key)
 
     puts "Response from server:"
     p response.to_s
