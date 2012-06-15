@@ -66,7 +66,7 @@ class MemprofUploader
     # Make this default to true if the user didn't pass any preference.
     @delete_dump = true if @delete_dump.nil?
 
-    # Make this default to 60 if the user didn't pass the number of seconds.
+    # Make this default to 300 if the user didn't pass the number of seconds.
     @secs ||= 300
 
     if @file
