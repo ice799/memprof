@@ -1,4 +1,10 @@
+# NOTE
+
+This project is no longer maintained. It does not work for any Ruby version
+above Ruby 1.8.7.
+
 # memprof
+
 (c) Joe Damato
 @joedamato
 http://timetobleed.com
